@@ -101,7 +101,7 @@ def decode_access_token(token: str) -> str:
         raise ValueError("Invalid access token")
 
     expires_at = payload.get("exp")
-    if not isinstance(expires_at, int) or expires_at < int(datetime.utcnow().timestamp()):
+    if not isinstance(expires_at, int) or expires_at <= int(datetime.utcnow().timestamp()):
         raise ValueError("Access token has expired")
 
     subject = payload.get("sub")
