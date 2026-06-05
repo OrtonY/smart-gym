@@ -1,4 +1,4 @@
-import { Activity, Dumbbell, Home, Settings, Shield } from "lucide-react";
+import { Activity, Bot, Dumbbell, Home, Settings, Shield } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 type LayoutProps = {
@@ -8,6 +8,7 @@ type LayoutProps = {
 const userNavItems = [
   { to: "/app", label: "首页", icon: Home },
   { to: "/app/train", label: "训练", icon: Dumbbell },
+  { to: "/app/ai-settings", label: "AI", icon: Bot },
   { to: "/app/profile", label: "我的", icon: Settings },
 ];
 
@@ -63,7 +64,12 @@ export default function Layout({ mode }: LayoutProps) {
         aria-label={isAdmin ? "管理端底部导航" : "用户端底部导航"}
         className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white px-3 py-2 shadow-soft sm:hidden"
       >
-        <div className="mx-auto grid max-w-md grid-cols-3 gap-2">
+        <div
+          className={[
+            "mx-auto grid max-w-md gap-2",
+            isAdmin ? "grid-cols-2" : "grid-cols-4",
+          ].join(" ")}
+        >
           {items.map((item) => {
             const Icon = item.icon;
             return (

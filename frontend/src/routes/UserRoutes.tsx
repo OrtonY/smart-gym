@@ -1,45 +1,9 @@
-import { Dumbbell, Sparkles, Timer } from "lucide-react";
 import { Route, Routes } from "react-router-dom";
 
 import Layout from "../components/Layout";
-
-function UserHomePlaceholder() {
-  const cards = [
-    { title: "今日计划", label: "查看训练安排", icon: Timer },
-    { title: "AI 教练", label: "生成训练建议", icon: Sparkles },
-    { title: "快速训练", label: "进入运动模式", icon: Dumbbell },
-  ];
-
-  return (
-    <section className="space-y-5">
-      <div>
-        <h2 className="text-2xl font-semibold text-slate-950">今日概览</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          训练、AI 教练和个人资料入口会在下一步接入真实接口。
-        </p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {cards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <article
-              key={card.title}
-              className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
-                <Icon aria-hidden="true" size={20} />
-              </div>
-              <h3 className="mt-4 text-base font-semibold text-slate-950">
-                {card.title}
-              </h3>
-              <p className="mt-1 text-sm text-slate-600">{card.label}</p>
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
+import AiProviderSettingsPage from "../pages/user/AiProviderSettingsPage";
+import HomePage from "../pages/user/HomePage";
+import ProfilePage from "../pages/user/ProfilePage";
 
 function UserPlaceholder({ title }: { title: string }) {
   return (
@@ -53,9 +17,10 @@ export default function UserRoutes() {
   return (
     <Routes>
       <Route element={<Layout mode="user" />}>
-        <Route index element={<UserHomePlaceholder />} />
+        <Route index element={<HomePage />} />
         <Route path="train" element={<UserPlaceholder title="训练" />} />
-        <Route path="profile" element={<UserPlaceholder title="我的资料" />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="ai-settings" element={<AiProviderSettingsPage />} />
       </Route>
     </Routes>
   );
