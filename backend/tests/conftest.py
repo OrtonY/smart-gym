@@ -1,27 +1,46 @@
+import os
 from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app.core.database import Base, SessionLocal, engine, get_db
+from app.core.database import Base, get_db
 from app.main import app
 from app.models.ai_provider_config import AiProviderConfig
 from app.models.user import User
 from app.models.user_profile import UserProfile
 
 _models = (AiProviderConfig, User, UserProfile)
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite:///:memory:")
+
+_engine_kwargs = {"pool_pre_ping": True}
+if TEST_DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs.update(
+        {
+            "connect_args": {"check_same_thread": False},
+            "poolclass": StaticPool,
+        }
+    )
+
+test_engine = create_engine(TEST_DATABASE_URL, **_engine_kwargs)
+TestingSessionLocal = sessionmaker(
+    bind=test_engine, autoflush=False, autocommit=False
+)
 
 
 @pytest.fixture()
 def db_session() -> Generator[Session, None, None]:
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+    Base.metadata.create_all(bind=test_engine)
+    db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
-        Base.metadata.drop_all(bind=engine)
+        Base.metadata.drop_all(bind=test_engine)
 
 
 @pytest.fixture()
