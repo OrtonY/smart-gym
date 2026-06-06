@@ -1,5 +1,16 @@
-import { Activity, Bot, Dumbbell, Home, Settings, Shield, Trophy } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import {
+  Activity,
+  Bot,
+  Dumbbell,
+  Home,
+  LogOut,
+  Settings,
+  Shield,
+  Trophy,
+} from "lucide-react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+
+import { useAuth } from "../auth/AuthContext";
 
 type LayoutProps = {
   mode: "user" | "admin";
@@ -35,6 +46,13 @@ function bottomNavClass({ isActive }: { isActive: boolean }) {
 export default function Layout({ mode }: LayoutProps) {
   const isAdmin = mode === "admin";
   const items = isAdmin ? adminNavItems : userNavItems;
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    logout();
+    navigate("/login", { replace: true });
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -48,19 +66,30 @@ export default function Layout({ mode }: LayoutProps) {
               {isAdmin ? "管理工作台" : "训练空间"}
             </h1>
           </div>
-          {isAdmin ? (
-            <nav className="hidden items-center gap-2 sm:flex" aria-label="管理端导航">
-              {items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink key={item.to} to={item.to} end className={navClass}>
-                    <Icon aria-hidden="true" size={18} />
-                    <span>{item.label}</span>
-                  </NavLink>
-                );
-              })}
-            </nav>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <nav className="hidden items-center gap-2 sm:flex" aria-label="管理端导航">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink key={item.to} to={item.to} end className={navClass}>
+                      <Icon aria-hidden="true" size={18} />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </nav>
+            ) : null}
+            <button
+              aria-label="退出登录"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              onClick={handleLogout}
+              title="退出登录"
+              type="button"
+            >
+              <LogOut aria-hidden="true" size={18} />
+            </button>
+          </div>
         </div>
       </header>
 
