@@ -20,16 +20,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const locationState = location.state as LoginLocationState | null;
-  const redirectTo = locationState?.from
+  const explicitRedirectTo = locationState?.from
     ? `${locationState.from.pathname}${locationState.from.search}${locationState.from.hash}`
-    : "/app";
+    : null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      const user = await login(email, password);
+      const redirectTo = explicitRedirectTo ?? (user.role === "admin" ? "/admin" : "/app");
       navigate(redirectTo, { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "登录失败");

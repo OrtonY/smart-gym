@@ -23,7 +23,7 @@ type AuthContextValue = {
   token: string | null;
   currentUser: CurrentUser | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<CurrentUser>;
   logout: () => void;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
@@ -67,7 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await loginRequest(email, password);
       setStoredToken(response.access_token);
       setToken(response.access_token);
-      await refreshCurrentUser();
+      const user = await fetchCurrentUser();
+      setCurrentUser(user);
+      return user;
     },
     [refreshCurrentUser],
   );
