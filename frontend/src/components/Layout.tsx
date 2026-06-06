@@ -5,10 +5,13 @@ import {
   Dumbbell,
   Home,
   LogOut,
+  Moon,
   Settings,
   Shield,
+  Sun,
   Trophy,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
@@ -50,6 +53,14 @@ export default function Layout({ mode }: LayoutProps) {
   const items = isAdmin ? adminNavItems : userNavItems;
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const [theme, setTheme] = useState(
+    () => document.documentElement.dataset.theme ?? "dark",
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("smart-gym-theme", theme);
+  }, [theme]);
 
   function handleLogout() {
     logout();
@@ -82,6 +93,19 @@ export default function Layout({ mode }: LayoutProps) {
                 })}
               </nav>
             ) : null}
+            <button
+              aria-label={theme === "dark" ? "切换浅色主题" : "切换深色主题"}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+              title={theme === "dark" ? "切换浅色主题" : "切换深色主题"}
+              type="button"
+            >
+              {theme === "dark" ? (
+                <Sun aria-hidden="true" size={18} />
+              ) : (
+                <Moon aria-hidden="true" size={18} />
+              )}
+            </button>
             <button
               aria-label="退出登录"
               className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"

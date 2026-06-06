@@ -1,13 +1,14 @@
 import { Dumbbell, Sparkles, Timer } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
 
 export default function HomePage() {
   const { currentUser } = useAuth();
   const cards = [
-    { title: "今日计划", label: "查看训练安排", icon: Timer },
-    { title: "AI 教练", label: "生成训练建议", icon: Sparkles },
-    { title: "快速训练", label: "进入运动模式", icon: Dumbbell },
+    { title: "今日计划", label: "查看训练安排", to: "/app/train", icon: Timer },
+    { title: "AI 教练", label: "生成训练建议", to: "/app/ai-settings", icon: Sparkles },
+    { title: "快速训练", label: "进入运动模式", to: "/app/train?tab=new", icon: Dumbbell },
   ];
 
   return (
@@ -24,8 +25,9 @@ export default function HomePage() {
         {cards.map((card) => {
           const Icon = card.icon;
           return (
-            <article
+            <Link
               key={card.title}
+              to={card.to}
               className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
@@ -35,7 +37,7 @@ export default function HomePage() {
                 {card.title}
               </h3>
               <p className="mt-1 text-sm text-slate-600">{card.label}</p>
-            </article>
+            </Link>
           );
         })}
       </div>

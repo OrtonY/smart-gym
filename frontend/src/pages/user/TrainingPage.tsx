@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Dumbbell, Plus, Timer } from "lucide-react";
+import { Dumbbell, ListChecks, Plus, Timer } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 import {
   Exercise,
@@ -21,6 +22,10 @@ type FormState = {
   calories_burned: string;
   notes: string;
 };
+
+type TrainingTab = "recent" | "new" | "records";
+
+const validTabs = new Set<TrainingTab>(["recent", "new", "records"]);
 
 const emptySummary: WorkoutSummary = {
   sessions_count: 0,
@@ -68,6 +73,7 @@ async function fetchTrainingData() {
 }
 
 export default function TrainingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [modes, setModes] = useState<WorkoutMode[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
@@ -77,6 +83,8 @@ export default function TrainingPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const tabParam = searchParams.get("tab") as TrainingTab | null;
+  const activeTab = tabParam && validTabs.has(tabParam) ? tabParam : "recent";
 
   async function loadData() {
     setIsLoading(true);
@@ -170,6 +178,7 @@ export default function TrainingPage() {
       setStatus("训练记录已保存");
       setForm(createEmptyForm());
       await loadData();
+      setSearchParams({ tab: "recent" });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "训练记录保存失败");
     } finally {
@@ -177,82 +186,37 @@ export default function TrainingPage() {
     }
   }
 
-  return (
-    <section className="grid gap-5 lg:grid-cols-[1fr_360px]">
-      <div className="space-y-5">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-950">训练</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            记录训练时长、消耗和备注，持续积累个人训练数据。
-          </p>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
-              <Dumbbell aria-hidden="true" size={20} />
-            </div>
-            <p className="mt-4 text-2xl font-semibold text-slate-950">
-              {summary.sessions_count}
+  function renderSessionCard(session: WorkoutSession) {
+    return (
+      <article
+        key={session.id}
+        className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">
+              {exerciseNames.get(session.exercise_id ?? 0) ??
+                modeNames.get(session.workout_mode_id ?? 0) ??
+                "自由训练"}
             </p>
-            <p className="mt-1 text-sm text-slate-600">训练次数</p>
-          </article>
-          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
-              <Timer aria-hidden="true" size={20} />
-            </div>
-            <p className="mt-4 text-2xl font-semibold text-slate-950">
-              {summary.total_duration_minutes}
+            <p className="mt-1 text-sm text-slate-600">
+              {formatDateTime(session.started_at)} · {session.duration_minutes} 分钟 ·{" "}
+              {session.calories_burned} 千卡
             </p>
-            <p className="mt-1 text-sm text-slate-600">累计分钟</p>
-          </article>
-          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
-              <Plus aria-hidden="true" size={20} />
-            </div>
-            <p className="mt-4 text-2xl font-semibold text-slate-950">
-              {summary.total_calories_burned}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">累计千卡</p>
-          </article>
+            {session.notes ? (
+              <p className="mt-2 text-sm text-slate-600">{session.notes}</p>
+            ) : null}
+          </div>
+          <span className="rounded-md bg-gym-mint px-2 py-1 text-xs font-medium text-gym-teal">
+            {session.status === "completed" ? "已完成" : "已放弃"}
+          </span>
         </div>
+      </article>
+    );
+  }
 
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-slate-950">最近训练</h3>
-          {latestSessions.map((session) => (
-            <article
-              key={session.id}
-              className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">
-                    {exerciseNames.get(session.exercise_id ?? 0) ??
-                      modeNames.get(session.workout_mode_id ?? 0) ??
-                      "自由训练"}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {formatDateTime(session.started_at)} · {session.duration_minutes} 分钟
-                    · {session.calories_burned} 千卡
-                  </p>
-                  {session.notes ? (
-                    <p className="mt-2 text-sm text-slate-600">{session.notes}</p>
-                  ) : null}
-                </div>
-                <span className="rounded-md bg-gym-mint px-2 py-1 text-xs font-medium text-gym-teal">
-                  {session.status === "completed" ? "已完成" : "已放弃"}
-                </span>
-              </div>
-            </article>
-          ))}
-          {!isLoading && latestSessions.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
-              还没有训练记录。
-            </div>
-          ) : null}
-        </div>
-      </div>
-
+  function renderNewTrainingForm() {
+    return (
       <form
         className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
         onSubmit={handleSubmit}
@@ -368,6 +332,97 @@ export default function TrainingPage() {
           {isSaving ? "保存中" : "保存训练"}
         </button>
       </form>
+    );
+  }
+
+  const tabs: Array<{ id: TrainingTab; label: string }> = [
+    { id: "recent", label: "最近训练" },
+    { id: "new", label: "新增训练" },
+    { id: "records", label: "训练记录" },
+  ];
+
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-2xl font-semibold text-slate-950">训练</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          记录训练时长、消耗和备注，持续积累个人训练数据。
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
+            <Dumbbell aria-hidden="true" size={20} />
+          </div>
+          <p className="mt-4 text-2xl font-semibold text-slate-950">
+            {summary.sessions_count}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">训练次数</p>
+        </article>
+        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
+            <Timer aria-hidden="true" size={20} />
+          </div>
+          <p className="mt-4 text-2xl font-semibold text-slate-950">
+            {summary.total_duration_minutes}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">累计分钟</p>
+        </article>
+        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
+            <ListChecks aria-hidden="true" size={20} />
+          </div>
+          <p className="mt-4 text-2xl font-semibold text-slate-950">
+            {summary.total_calories_burned}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">累计千卡</p>
+        </article>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-white p-1 shadow-soft">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={[
+              "rounded-md px-3 py-2 text-sm font-semibold transition",
+              activeTab === tab.id
+                ? "bg-gym-teal text-white"
+                : "text-slate-600 hover:bg-slate-100",
+            ].join(" ")}
+            type="button"
+            onClick={() => setSearchParams({ tab: tab.id })}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "recent" ? (
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-slate-950">最近训练</h3>
+          {latestSessions.map(renderSessionCard)}
+          {!isLoading && latestSessions.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+              还没有训练记录。
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {activeTab === "new" ? renderNewTrainingForm() : null}
+
+      {activeTab === "records" ? (
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-slate-950">训练记录</h3>
+          {sessions.map(renderSessionCard)}
+          {!isLoading && sessions.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+              还没有训练记录。
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
