@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  BookOpen,
   Dumbbell,
   Home,
   LogOut,
@@ -26,7 +27,8 @@ const userNavItems = [
 
 const adminNavItems = [
   { to: "/admin", label: "总览", icon: Shield },
-  { to: "/admin/content", label: "内容", icon: Activity },
+  { to: "/admin/workout-modes", label: "模式", icon: Activity },
+  { to: "/admin/exercises", label: "动作", icon: BookOpen },
 ];
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -104,7 +106,7 @@ export default function Layout({ mode }: LayoutProps) {
         <div
           className={[
             "mx-auto grid max-w-md gap-2",
-            isAdmin ? "grid-cols-2" : "grid-cols-5",
+            isAdmin ? "grid-cols-3" : "grid-cols-5",
           ].join(" ")}
         >
           {items.map((item) => {

@@ -2,8 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 import Layout from "../components/Layout";
-import AdminContentPage from "../pages/admin/AdminContentPage";
+import AdminExercisesPage from "../pages/admin/AdminExercisesPage";
 import AdminHomePage from "../pages/admin/AdminHomePage";
+import AdminWorkoutModesPage from "../pages/admin/AdminWorkoutModesPage";
 
 export default function AdminRoutes() {
   const { currentUser } = useAuth();
@@ -16,7 +17,9 @@ export default function AdminRoutes() {
     <Routes>
       <Route element={<Layout mode="admin" />}>
         <Route index element={<AdminHomePage />} />
-        <Route path="content" element={<AdminContentPage />} />
+        <Route path="content" element={<Navigate to="/admin/workout-modes" replace />} />
+        <Route path="workout-modes" element={<AdminWorkoutModesPage />} />
+        <Route path="exercises" element={<AdminExercisesPage />} />
       </Route>
     </Routes>
   );

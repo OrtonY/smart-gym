@@ -17,11 +17,21 @@ from app.schemas.content import (
 from app.services.content_service import (
     create_exercise,
     create_workout_mode,
+    list_exercises,
+    list_workout_modes,
     update_exercise,
     update_workout_mode,
 )
 
 router = APIRouter()
+
+
+@router.get("/workout-modes", response_model=list[WorkoutModeResponse])
+def list_admin_workout_modes(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[WorkoutModeResponse]:
+    return list_workout_modes(db, active_only=False)
 
 
 @router.post(
@@ -57,6 +67,14 @@ def update_admin_workout_mode(
             detail="Workout mode not found",
         )
     return workout_mode
+
+
+@router.get("/exercises", response_model=list[ExerciseResponse])
+def list_admin_exercises(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[ExerciseResponse]:
+    return list_exercises(db, published_only=False)
 
 
 @router.post(

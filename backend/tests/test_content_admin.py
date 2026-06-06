@@ -37,6 +37,50 @@ def test_admin_can_create_workout_mode_and_user_can_read_active_catalog(
     ]
 
 
+def test_admin_can_list_all_workout_modes(client, create_user_and_token):
+    _, admin_token = create_user_and_token("admin@example.com", role="admin")
+    _, user_token = create_user_and_token("member@example.com", role="user")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    active_response = client.post(
+        "/api/admin/workout-modes",
+        headers=headers,
+        json={
+            "code": "strength",
+            "name": "力量训练",
+            "description": "基础力量训练模式",
+            "estimated_calories_per_hour": 360,
+            "is_active": True,
+        },
+    )
+    inactive_response = client.post(
+        "/api/admin/workout-modes",
+        headers=headers,
+        json={
+            "code": "draft-mode",
+            "name": "草稿模式",
+            "description": "暂不开放",
+            "estimated_calories_per_hour": 280,
+            "is_active": False,
+        },
+    )
+
+    admin_response = client.get("/api/admin/workout-modes", headers=headers)
+    user_response = client.get(
+        "/api/admin/workout-modes",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert active_response.status_code == 201
+    assert inactive_response.status_code == 201
+    assert admin_response.status_code == 200
+    assert [item["code"] for item in admin_response.json()] == [
+        "strength",
+        "draft-mode",
+    ]
+    assert user_response.status_code == 403
+
+
 def test_non_admin_cannot_create_workout_mode(client, create_user_and_token):
     _, token = create_user_and_token("member@example.com", role="user")
 
@@ -188,6 +232,58 @@ def test_admin_can_create_exercise_and_catalog_only_returns_published(
     exercises = catalog_response.json()
     assert [item["slug"] for item in exercises] == ["bodyweight-squat"]
     assert exercises[0]["detection_rules"] == {"counter": "knee_angle"}
+
+
+def test_admin_can_list_all_exercises(client, create_user_and_token):
+    _, admin_token = create_user_and_token("admin@example.com", role="admin")
+    _, user_token = create_user_and_token("member@example.com", role="user")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    published_response = client.post(
+        "/api/admin/exercises",
+        headers=headers,
+        json={
+            "slug": "bodyweight-squat",
+            "name": "徒手深蹲",
+            "target_muscle": "腿部",
+            "difficulty": "beginner",
+            "description": "基础下肢训练动作",
+            "tutorial_url": "https://example.com/squat",
+            "media_url": "https://example.com/squat.mp4",
+            "detection_rules": {"counter": "knee_angle"},
+            "is_published": True,
+        },
+    )
+    draft_response = client.post(
+        "/api/admin/exercises",
+        headers=headers,
+        json={
+            "slug": "draft-push-up",
+            "name": "草稿俯卧撑",
+            "target_muscle": "胸部",
+            "difficulty": "intermediate",
+            "description": "未发布内容",
+            "tutorial_url": None,
+            "media_url": None,
+            "detection_rules": None,
+            "is_published": False,
+        },
+    )
+
+    admin_response = client.get("/api/admin/exercises", headers=headers)
+    user_response = client.get(
+        "/api/admin/exercises",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert published_response.status_code == 201
+    assert draft_response.status_code == 201
+    assert admin_response.status_code == 200
+    assert [item["slug"] for item in admin_response.json()] == [
+        "bodyweight-squat",
+        "draft-push-up",
+    ]
+    assert user_response.status_code == 403
 
 
 def test_admin_create_exercise_rejects_invalid_slug(client, create_user_and_token):

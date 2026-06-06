@@ -222,6 +222,14 @@ export type ExercisePayload = Omit<Exercise, "id">;
 export type WorkoutModeUpdatePayload = Partial<Omit<WorkoutModePayload, "code">>;
 export type ExerciseUpdatePayload = Partial<Omit<ExercisePayload, "slug">>;
 
+export function fetchAdminWorkoutModes() {
+  return apiRequest<WorkoutMode[]>("/admin/workout-modes");
+}
+
+export function fetchAdminExercises() {
+  return apiRequest<Exercise[]>("/admin/exercises");
+}
+
 export function createAdminWorkoutMode(payload: WorkoutModePayload) {
   return apiRequest<WorkoutMode>("/admin/workout-modes", {
     method: "POST",
