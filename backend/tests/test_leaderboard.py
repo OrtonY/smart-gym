@@ -41,6 +41,26 @@ def test_refresh_and_read_weekly_leaderboard_exposes_only_public_fields(
         },
     )
     assert refresh_response.status_code == 200
+    assert refresh_response.json() == [
+        {
+            "display_name": "Bob",
+            "avatar_url": None,
+            "value": 50.0,
+            "rank": 1,
+            "period_type": "weekly",
+            "metric_type": "duration_minutes",
+        },
+        {
+            "display_name": "Alice",
+            "avatar_url": "https://example.com/alice.png",
+            "value": 30.0,
+            "rank": 2,
+            "period_type": "weekly",
+            "metric_type": "duration_minutes",
+        },
+    ]
+    assert "email" not in str(refresh_response.json())
+    assert "user_id" not in str(refresh_response.json())
 
     read_response = client.get(
         "/api/leaderboard?period_type=weekly&metric_type=duration_minutes",
