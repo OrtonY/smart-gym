@@ -1,15 +1,28 @@
 import { FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 
+type LoginLocationState = {
+  from?: {
+    hash: string;
+    pathname: string;
+    search: string;
+  };
+};
+
 export default function LoginPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const locationState = location.state as LoginLocationState | null;
+  const redirectTo = locationState?.from
+    ? `${locationState.from.pathname}${locationState.from.search}${locationState.from.hash}`
+    : "/app";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -17,7 +30,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       await login(email, password);
-      navigate("/app", { replace: true });
+      navigate(redirectTo, { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "登录失败");
     } finally {
