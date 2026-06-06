@@ -34,7 +34,13 @@ def create_admin_workout_mode(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> WorkoutModeResponse:
-    return create_workout_mode(db, payload)
+    try:
+        return create_workout_mode(db, payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.put("/workout-modes/{workout_mode_id}", response_model=WorkoutModeResponse)
@@ -63,7 +69,13 @@ def create_admin_exercise(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ExerciseResponse:
-    return create_exercise(db, payload)
+    try:
+        return create_exercise(db, payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.put("/exercises/{exercise_id}", response_model=ExerciseResponse)

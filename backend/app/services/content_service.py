@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.exercise import Exercise
@@ -25,7 +26,11 @@ def list_workout_modes(db: Session, active_only: bool = False) -> list[WorkoutMo
 def create_workout_mode(db: Session, payload: WorkoutModeCreate) -> WorkoutMode:
     workout_mode = WorkoutMode(**payload.model_dump())
     db.add(workout_mode)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("Workout mode code already exists") from exc
     db.refresh(workout_mode)
     return workout_mode
 
@@ -59,7 +64,11 @@ def list_exercises(db: Session, published_only: bool = False) -> list[Exercise]:
 def create_exercise(db: Session, payload: ExerciseCreate) -> Exercise:
     exercise = Exercise(**payload.model_dump())
     db.add(exercise)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("Exercise slug already exists") from exc
     db.refresh(exercise)
     return exercise
 
