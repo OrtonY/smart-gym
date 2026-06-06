@@ -63,11 +63,13 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.skip_default_admin_seed = True
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.clear()
+        app.state.skip_default_admin_seed = False
 
 
 @pytest.fixture()

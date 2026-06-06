@@ -3,8 +3,9 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import require_admin
-from app.core.security import create_access_token
-from app.services.auth_service import register_user
+from app.core.security import create_access_token, verify_password
+from app.models.user import User
+from app.services.auth_service import authenticate_user, ensure_default_admin, register_user
 
 
 def test_register_login_and_me(client):
@@ -86,3 +87,25 @@ def test_register_user_rolls_back_duplicate_integrity_error(db_session, monkeypa
         register_user(db_session, "race@example.com", "Passw0rd!", "Racer")
 
     assert rollback_called is True
+
+
+def test_ensure_default_admin_creates_loginable_admin(db_session):
+    admin = ensure_default_admin(db_session)
+
+    assert admin.email == "admin"
+    assert admin.role == "admin"
+    assert admin.is_active is True
+    assert verify_password("admin123", admin.hashed_password)
+    assert authenticate_user(db_session, "admin", "admin123") == admin
+
+
+def test_ensure_default_admin_is_idempotent_and_preserves_password(db_session):
+    admin = ensure_default_admin(db_session)
+    original_hash = admin.hashed_password
+
+    second_admin = ensure_default_admin(db_session)
+    admin_count = db_session.query(User).filter(User.email == "admin").count()
+
+    assert second_admin.id == admin.id
+    assert second_admin.hashed_password == original_hash
+    assert admin_count == 1

@@ -27,6 +27,22 @@ alembic revision --autogenerate -m "init"
 alembic upgrade head
 ```
 
+Run the backend with the PostgreSQL `DATABASE_URL` configured in `backend/.env`:
+
+```bash
+cd backend
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+On startup, the backend ensures a default administrator account exists:
+
+```text
+account: admin
+password: admin123
+```
+
+If the `admin` account already exists, startup leaves it unchanged.
+
 Run backend tests:
 
 ```bash
