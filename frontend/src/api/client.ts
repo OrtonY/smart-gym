@@ -217,6 +217,40 @@ export function fetchExercises() {
   return apiRequest<Exercise[]>("/catalog/exercises");
 }
 
+export type WorkoutModePayload = Omit<WorkoutMode, "id">;
+export type ExercisePayload = Omit<Exercise, "id">;
+
+export function createAdminWorkoutMode(payload: WorkoutModePayload) {
+  return apiRequest<WorkoutMode>("/admin/workout-modes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminWorkoutMode(
+  modeId: number,
+  payload: Partial<WorkoutModePayload>,
+) {
+  return apiRequest<WorkoutMode>(`/admin/workout-modes/${modeId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createAdminExercise(payload: ExercisePayload) {
+  return apiRequest<Exercise>("/admin/exercises", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminExercise(exerciseId: number, payload: Partial<ExercisePayload>) {
+  return apiRequest<Exercise>(`/admin/exercises/${exerciseId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchWorkoutSessions() {
   return apiRequest<WorkoutSession[]>("/workouts/sessions");
 }
