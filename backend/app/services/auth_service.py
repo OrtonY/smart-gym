@@ -42,6 +42,25 @@ def register_user(
     return user
 
 
+def ensure_default_admin(db: Session) -> User:
+    admin = get_user_by_email(db, "admin")
+    if admin is not None:
+        return admin
+
+    admin = User(
+        email="admin",
+        hashed_password=hash_password("admin123"),
+        display_name="Admin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(admin)
+
+    db.commit()
+    db.refresh(admin)
+    return admin
+
+
 def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     user = get_user_by_email(db, email)
     if user is None or not verify_password(password, user.hashed_password):

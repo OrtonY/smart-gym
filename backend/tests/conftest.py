@@ -11,10 +11,24 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models.ai_provider_config import AiProviderConfig
+from app.models.exercise import Exercise
+from app.models.leaderboard_refresh_state import LeaderboardRefreshState
+from app.models.leaderboard_snapshot import LeaderboardSnapshot
 from app.models.user import User
 from app.models.user_profile import UserProfile
+from app.models.workout_mode import WorkoutMode
+from app.models.workout_session import WorkoutSession
 
-_models = (AiProviderConfig, User, UserProfile)
+_models = (
+    AiProviderConfig,
+    Exercise,
+    LeaderboardRefreshState,
+    LeaderboardSnapshot,
+    User,
+    UserProfile,
+    WorkoutMode,
+    WorkoutSession,
+)
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite:///:memory:")
 
 _engine_kwargs = {"pool_pre_ping": True}
@@ -49,11 +63,13 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.skip_default_admin_seed = True
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.clear()
+        app.state.skip_default_admin_seed = False
 
 
 @pytest.fixture()

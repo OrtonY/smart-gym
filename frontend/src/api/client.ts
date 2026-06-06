@@ -154,3 +154,135 @@ export function deleteAiProviderConfig(configId: number) {
     method: "DELETE",
   });
 }
+
+export type WorkoutMode = {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  estimated_calories_per_hour: number;
+  is_active: boolean;
+};
+
+export type Exercise = {
+  id: number;
+  slug: string;
+  name: string;
+  target_muscle: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  description: string | null;
+  tutorial_url: string | null;
+  media_url: string | null;
+  detection_rules: Record<string, unknown> | null;
+  is_published: boolean;
+};
+
+export type WorkoutSession = {
+  id: number;
+  user_id: number;
+  workout_mode_id: number | null;
+  exercise_id: number | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_minutes: number;
+  calories_burned: number;
+  reps: number | null;
+  score: number | null;
+  status: "completed" | "abandoned";
+  notes: string | null;
+};
+
+export type WorkoutSessionPayload = Omit<WorkoutSession, "id" | "user_id">;
+
+export type WorkoutSummary = {
+  sessions_count: number;
+  total_duration_minutes: number;
+  total_calories_burned: number;
+};
+
+export type LeaderboardEntry = {
+  display_name: string;
+  avatar_url: string | null;
+  value: number;
+  rank: number;
+  period_type: "weekly" | "monthly";
+  metric_type: "duration_minutes" | "calories_burned" | "sessions_count";
+};
+
+export function fetchWorkoutModes() {
+  return apiRequest<WorkoutMode[]>("/catalog/workout-modes");
+}
+
+export function fetchExercises() {
+  return apiRequest<Exercise[]>("/catalog/exercises");
+}
+
+export type WorkoutModePayload = Omit<WorkoutMode, "id">;
+export type ExercisePayload = Omit<Exercise, "id">;
+export type WorkoutModeUpdatePayload = Partial<Omit<WorkoutModePayload, "code">>;
+export type ExerciseUpdatePayload = Partial<Omit<ExercisePayload, "slug">>;
+
+export function fetchAdminWorkoutModes() {
+  return apiRequest<WorkoutMode[]>("/admin/workout-modes");
+}
+
+export function fetchAdminExercises() {
+  return apiRequest<Exercise[]>("/admin/exercises");
+}
+
+export function createAdminWorkoutMode(payload: WorkoutModePayload) {
+  return apiRequest<WorkoutMode>("/admin/workout-modes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminWorkoutMode(
+  modeId: number,
+  payload: WorkoutModeUpdatePayload,
+) {
+  return apiRequest<WorkoutMode>(`/admin/workout-modes/${modeId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createAdminExercise(payload: ExercisePayload) {
+  return apiRequest<Exercise>("/admin/exercises", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminExercise(exerciseId: number, payload: ExerciseUpdatePayload) {
+  return apiRequest<Exercise>(`/admin/exercises/${exerciseId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchWorkoutSessions() {
+  return apiRequest<WorkoutSession[]>("/workouts/sessions");
+}
+
+export function createWorkoutSession(payload: WorkoutSessionPayload) {
+  return apiRequest<WorkoutSession>("/workouts/sessions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchWorkoutSummary() {
+  return apiRequest<WorkoutSummary>("/workouts/summary");
+}
+
+export function fetchLeaderboard(
+  periodType: LeaderboardEntry["period_type"],
+  metricType: LeaderboardEntry["metric_type"],
+) {
+  const params = new URLSearchParams({
+    period_type: periodType,
+    metric_type: metricType,
+  });
+  return apiRequest<LeaderboardEntry[]>(`/leaderboard?${params.toString()}`);
+}

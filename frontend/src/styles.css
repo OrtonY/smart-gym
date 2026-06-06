@@ -6,6 +6,10 @@ html {
   background: #f8fafc;
 }
 
+html[data-theme="dark"] {
+  background: #050807;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -18,4 +22,96 @@ body {
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+}
+
+html[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(167, 243, 63, 0.12), transparent 32rem),
+    radial-gradient(circle at 90% 10%, rgba(20, 184, 166, 0.12), transparent 30rem),
+    #050807;
+  color: #ecfdf5;
+}
+
+html[data-theme="dark"] .bg-slate-50 {
+  background-color: transparent;
+}
+
+html[data-theme="dark"] .bg-white,
+html[data-theme="dark"] .bg-white\/95 {
+  background-color: rgba(15, 23, 20, 0.94);
+}
+
+html[data-theme="dark"] .bg-slate-100 {
+  background-color: rgba(30, 41, 35, 0.95);
+}
+
+html[data-theme="dark"] .bg-gym-mint {
+  background-color: rgba(190, 242, 100, 0.15);
+}
+
+html[data-theme="dark"] .bg-gym-teal {
+  background-color: #bef264;
+  color: #07110b;
+}
+
+html[data-theme="dark"] .hover\:bg-teal-800:hover {
+  background-color: #a3e635;
+}
+
+html[data-theme="dark"] .hover\:bg-slate-100:hover {
+  background-color: rgba(51, 65, 58, 0.9);
+}
+
+html[data-theme="dark"] .border-slate-200,
+html[data-theme="dark"] .border-slate-300 {
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+html[data-theme="dark"] .border-dashed {
+  border-color: rgba(190, 242, 100, 0.28);
+}
+
+html[data-theme="dark"] .text-slate-950 {
+  color: #f8fafc;
+}
+
+html[data-theme="dark"] .text-slate-700 {
+  color: #d1d5db;
+}
+
+html[data-theme="dark"] .text-slate-600,
+html[data-theme="dark"] .text-slate-500 {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .text-gym-teal {
+  color: #bef264;
+}
+
+html[data-theme="dark"] .text-gym-coral {
+  color: #22d3ee;
+}
+
+html[data-theme="dark"] .shadow-soft {
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background-color: rgba(7, 17, 11, 0.86);
+  color: #ecfdf5;
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: #64748b;
+}
+
+html[data-theme="dark"] input:focus,
+html[data-theme="dark"] select:focus,
+html[data-theme="dark"] textarea:focus {
+  border-color: #bef264;
+  box-shadow: 0 0 0 2px rgba(190, 242, 100, 0.24);
 }

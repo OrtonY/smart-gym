@@ -1,5 +1,20 @@
-import { Activity, Bot, Dumbbell, Home, Settings, Shield } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import {
+  Activity,
+  Bot,
+  BookOpen,
+  Dumbbell,
+  Home,
+  LogOut,
+  Moon,
+  Settings,
+  Shield,
+  Sun,
+  Trophy,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+
+import { useAuth } from "../auth/AuthContext";
 
 type LayoutProps = {
   mode: "user" | "admin";
@@ -8,13 +23,15 @@ type LayoutProps = {
 const userNavItems = [
   { to: "/app", label: "首页", icon: Home },
   { to: "/app/train", label: "训练", icon: Dumbbell },
+  { to: "/app/leaderboard", label: "榜单", icon: Trophy },
   { to: "/app/ai-settings", label: "AI", icon: Bot },
   { to: "/app/profile", label: "我的", icon: Settings },
 ];
 
 const adminNavItems = [
   { to: "/admin", label: "总览", icon: Shield },
-  { to: "/admin/content", label: "内容", icon: Activity },
+  { to: "/admin/workout-modes", label: "模式", icon: Activity },
+  { to: "/admin/exercises", label: "动作", icon: BookOpen },
 ];
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -24,9 +41,32 @@ function navClass({ isActive }: { isActive: boolean }) {
   ].join(" ");
 }
 
+function bottomNavClass({ isActive }: { isActive: boolean }) {
+  return [
+    "flex min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 py-1.5 text-[11px] font-medium leading-none transition",
+    isActive ? "bg-gym-teal text-white" : "text-slate-600 hover:bg-slate-100",
+  ].join(" ");
+}
+
 export default function Layout({ mode }: LayoutProps) {
   const isAdmin = mode === "admin";
   const items = isAdmin ? adminNavItems : userNavItems;
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
+  const canSwitchToAdmin = !isAdmin && currentUser?.role === "admin";
+  const [theme, setTheme] = useState(
+    () => document.documentElement.dataset.theme ?? "dark",
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("smart-gym-theme", theme);
+  }, [theme]);
+
+  function handleLogout() {
+    logout();
+    navigate("/login", { replace: true });
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -40,19 +80,53 @@ export default function Layout({ mode }: LayoutProps) {
               {isAdmin ? "管理工作台" : "训练空间"}
             </h1>
           </div>
-          {isAdmin ? (
-            <nav className="hidden items-center gap-2 sm:flex" aria-label="管理端导航">
-              {items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink key={item.to} to={item.to} end className={navClass}>
-                    <Icon aria-hidden="true" size={18} />
-                    <span>{item.label}</span>
-                  </NavLink>
-                );
-              })}
-            </nav>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <nav className="hidden items-center gap-2 sm:flex" aria-label="管理端导航">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink key={item.to} to={item.to} end className={navClass}>
+                      <Icon aria-hidden="true" size={18} />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </nav>
+            ) : null}
+            {canSwitchToAdmin ? (
+              <Link
+                aria-label="切换到管理"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+                title="切换到管理"
+                to="/admin"
+              >
+                <Shield aria-hidden="true" size={18} />
+              </Link>
+            ) : null}
+            <button
+              aria-label={theme === "dark" ? "切换浅色主题" : "切换深色主题"}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+              title={theme === "dark" ? "切换浅色主题" : "切换深色主题"}
+              type="button"
+            >
+              {theme === "dark" ? (
+                <Sun aria-hidden="true" size={18} />
+              ) : (
+                <Moon aria-hidden="true" size={18} />
+              )}
+            </button>
+            <button
+              aria-label="退出登录"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              onClick={handleLogout}
+              title="退出登录"
+              type="button"
+            >
+              <LogOut aria-hidden="true" size={18} />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -67,15 +141,15 @@ export default function Layout({ mode }: LayoutProps) {
         <div
           className={[
             "mx-auto grid max-w-md gap-2",
-            isAdmin ? "grid-cols-2" : "grid-cols-4",
+            isAdmin ? "grid-cols-3" : "grid-cols-5",
           ].join(" ")}
         >
           {items.map((item) => {
             const Icon = item.icon;
             return (
-              <NavLink key={item.to} to={item.to} end className={navClass}>
+              <NavLink key={item.to} to={item.to} end className={bottomNavClass}>
                 <Icon aria-hidden="true" size={18} />
-                <span>{item.label}</span>
+                <span className="max-w-full truncate">{item.label}</span>
               </NavLink>
             );
           })}

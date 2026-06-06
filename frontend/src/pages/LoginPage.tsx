@@ -20,16 +20,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const locationState = location.state as LoginLocationState | null;
-  const redirectTo = locationState?.from
+  const explicitRedirectTo = locationState?.from
     ? `${locationState.from.pathname}${locationState.from.search}${locationState.from.hash}`
-    : "/app";
+    : null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      await login(email.trim(), password);
+      const redirectTo = explicitRedirectTo ?? "/app";
       navigate(redirectTo, { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "登录失败");
@@ -47,10 +48,13 @@ export default function LoginPage() {
         <h1 className="mt-2 text-2xl font-semibold text-slate-950">登录</h1>
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium text-slate-700">
-            邮箱
+            账号
             <input
+              autoComplete="username"
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              type="email"
+              inputMode="email"
+              placeholder="邮箱或 admin"
+              type="text"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
