@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -30,7 +30,13 @@ def create_my_workout_session(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> WorkoutSessionResponse:
-    return create_workout_session(db, current_user.id, payload)
+    try:
+        return create_workout_session(db, current_user.id, payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/sessions", response_model=list[WorkoutSessionResponse])

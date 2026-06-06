@@ -106,3 +106,131 @@ def test_workout_summary_uses_only_current_user(
         "total_duration_minutes": 70,
         "total_calories_burned": 440,
     }
+
+
+def test_create_workout_session_rejects_user_id_override(
+    client, create_user_and_token
+):
+    _, token = create_user_and_token("member@example.com", role="user")
+
+    response = client.post(
+        "/api/workouts/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "user_id": 999,
+            "workout_mode_id": None,
+            "exercise_id": None,
+            "started_at": "2026-06-06T08:00:00",
+            "ended_at": None,
+            "duration_minutes": 35,
+            "calories_burned": 220,
+            "reps": None,
+            "score": None,
+            "status": "completed",
+            "notes": None,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_workout_session_rejects_zero_workout_mode_id(
+    client, create_user_and_token
+):
+    _, token = create_user_and_token("member@example.com", role="user")
+
+    response = client.post(
+        "/api/workouts/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "workout_mode_id": 0,
+            "exercise_id": None,
+            "started_at": "2026-06-06T08:00:00",
+            "ended_at": None,
+            "duration_minutes": 35,
+            "calories_burned": 220,
+            "reps": None,
+            "score": None,
+            "status": "completed",
+            "notes": None,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_workout_session_returns_404_for_missing_workout_mode(
+    client, create_user_and_token
+):
+    _, token = create_user_and_token("member@example.com", role="user")
+
+    response = client.post(
+        "/api/workouts/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "workout_mode_id": 999,
+            "exercise_id": None,
+            "started_at": "2026-06-06T08:00:00",
+            "ended_at": None,
+            "duration_minutes": 35,
+            "calories_burned": 220,
+            "reps": None,
+            "score": None,
+            "status": "completed",
+            "notes": None,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Workout mode not found"
+
+
+def test_create_workout_session_returns_404_for_missing_exercise(
+    client, create_user_and_token
+):
+    _, token = create_user_and_token("member@example.com", role="user")
+
+    response = client.post(
+        "/api/workouts/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "workout_mode_id": None,
+            "exercise_id": 999,
+            "started_at": "2026-06-06T08:00:00",
+            "ended_at": None,
+            "duration_minutes": 35,
+            "calories_burned": 220,
+            "reps": None,
+            "score": None,
+            "status": "completed",
+            "notes": None,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Exercise not found"
+
+
+def test_create_workout_session_rejects_invalid_status(
+    client, create_user_and_token
+):
+    _, token = create_user_and_token("member@example.com", role="user")
+
+    response = client.post(
+        "/api/workouts/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "workout_mode_id": None,
+            "exercise_id": None,
+            "started_at": "2026-06-06T08:00:00",
+            "ended_at": None,
+            "duration_minutes": 35,
+            "calories_burned": 220,
+            "reps": None,
+            "score": None,
+            "status": "paused",
+            "notes": None,
+        },
+    )
+
+    assert response.status_code == 422

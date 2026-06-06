@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.exercise import Exercise
+from app.models.workout_mode import WorkoutMode
 from app.models.workout_session import WorkoutSession
 from app.schemas.workouts import WorkoutSessionCreate
 
@@ -10,9 +13,28 @@ from app.schemas.workouts import WorkoutSessionCreate
 def create_workout_session(
     db: Session, user_id: int, payload: WorkoutSessionCreate
 ) -> WorkoutSession:
+    if payload.workout_mode_id is not None and db.get(
+        WorkoutMode, payload.workout_mode_id
+    ) is None:
+        raise ValueError("Workout mode not found")
+
+    if (
+        payload.exercise_id is not None
+        and db.get(Exercise, payload.exercise_id) is None
+    ):
+        raise ValueError("Exercise not found")
+
     workout_session = WorkoutSession(user_id=user_id, **payload.model_dump())
     db.add(workout_session)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if payload.workout_mode_id is not None:
+            raise ValueError("Workout mode not found") from exc
+        if payload.exercise_id is not None:
+            raise ValueError("Exercise not found") from exc
+        raise
     db.refresh(workout_session)
     return workout_session
 

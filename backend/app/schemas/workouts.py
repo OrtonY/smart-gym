@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class WorkoutSessionCreate(BaseModel):
-    workout_mode_id: Optional[int] = None
-    exercise_id: Optional[int] = None
+    workout_mode_id: Optional[int] = Field(default=None, ge=1)
+    exercise_id: Optional[int] = Field(default=None, ge=1)
     started_at: datetime
     ended_at: Optional[datetime] = None
     duration_minutes: int = Field(ge=1, le=1440)
@@ -17,6 +17,8 @@ class WorkoutSessionCreate(BaseModel):
     score: Optional[float] = Field(default=None, ge=0, le=100)
     status: str = Field(pattern="^(completed|abandoned)$")
     notes: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class WorkoutSessionResponse(WorkoutSessionCreate):
