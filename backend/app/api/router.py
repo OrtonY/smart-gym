@@ -6,6 +6,7 @@ from app.api.routes import (
     auth,
     catalog,
     health,
+    leaderboard,
     users,
     workouts,
 )
@@ -16,5 +17,6 @@ api_router.include_router(admin_content.router, prefix="/admin", tags=["admin"])
 api_router.include_router(ai_configs.router, prefix="/ai-configs", tags=["ai-configs"])
 api_router.include_router(catalog.router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(health.router, prefix="/health", tags=["health"])
+api_router.include_router(leaderboard.router, prefix="/leaderboard", tags=["leaderboard"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(workouts.router, prefix="/workouts", tags=["workouts"])
