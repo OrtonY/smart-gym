@@ -13,16 +13,15 @@ from app.schemas.workouts import WorkoutSessionCreate
 def create_workout_session(
     db: Session, user_id: int, payload: WorkoutSessionCreate
 ) -> WorkoutSession:
-    if payload.workout_mode_id is not None and db.get(
-        WorkoutMode, payload.workout_mode_id
-    ) is None:
-        raise ValueError("Workout mode not found")
+    if payload.workout_mode_id is not None:
+        workout_mode = db.get(WorkoutMode, payload.workout_mode_id)
+        if workout_mode is None or not workout_mode.is_active:
+            raise ValueError("Workout mode not found")
 
-    if (
-        payload.exercise_id is not None
-        and db.get(Exercise, payload.exercise_id) is None
-    ):
-        raise ValueError("Exercise not found")
+    if payload.exercise_id is not None:
+        exercise = db.get(Exercise, payload.exercise_id)
+        if exercise is None or not exercise.is_published:
+            raise ValueError("Exercise not found")
 
     workout_session = WorkoutSession(user_id=user_id, **payload.model_dump())
     db.add(workout_session)
@@ -53,7 +52,10 @@ def get_workout_summary(db: Session, user_id: int) -> dict[str, int]:
         func.count(WorkoutSession.id),
         func.coalesce(func.sum(WorkoutSession.duration_minutes), 0),
         func.coalesce(func.sum(WorkoutSession.calories_burned), 0),
-    ).where(WorkoutSession.user_id == user_id)
+    ).where(
+        WorkoutSession.user_id == user_id,
+        WorkoutSession.status == "completed",
+    )
     sessions_count, total_duration_minutes, total_calories_burned = db.execute(
         statement
     ).one()
