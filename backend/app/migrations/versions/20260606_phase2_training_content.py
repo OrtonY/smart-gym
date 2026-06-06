@@ -61,7 +61,8 @@ def upgrade() -> None:
     sa.Column('rank', sa.Integer(), nullable=False),
     sa.Column('generated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('period_type', 'metric_type', 'period_start', 'user_id', name='uq_leaderboard_snapshot_period_metric_user')
     )
     op.create_index(op.f('ix_leaderboard_snapshots_id'), 'leaderboard_snapshots', ['id'], unique=False)
     op.create_index(op.f('ix_leaderboard_snapshots_metric_type'), 'leaderboard_snapshots', ['metric_type'], unique=False)

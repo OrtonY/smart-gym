@@ -68,6 +68,17 @@ def refresh_leaderboard(
         )
     )
 
+    if not rows:
+        db.execute(
+            delete(LeaderboardSnapshot).where(
+                LeaderboardSnapshot.period_type == period_type,
+                LeaderboardSnapshot.metric_type == metric_type,
+                LeaderboardSnapshot.period_start <= period_start,
+            )
+        )
+        db.commit()
+        return []
+
     snapshots = [
         LeaderboardSnapshot(
             period_type=period_type,
