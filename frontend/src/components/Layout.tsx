@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   BookOpen,
+  CalendarDays,
   Dumbbell,
   Home,
   LogOut,
@@ -23,6 +24,7 @@ type LayoutProps = {
 const userNavItems = [
   { to: "/app", label: "首页", icon: Home },
   { to: "/app/train", label: "训练", icon: Dumbbell },
+  { to: "/app/plans", label: "课表", icon: CalendarDays },
   { to: "/app/leaderboard", label: "榜单", icon: Trophy },
   { to: "/app/ai-settings", label: "AI", icon: Bot },
   { to: "/app/profile", label: "我的", icon: Settings },
@@ -53,7 +55,7 @@ export default function Layout({ mode }: LayoutProps) {
   const items = isAdmin ? adminNavItems : userNavItems;
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
-  const canSwitchToAdmin = !isAdmin && currentUser?.role === "admin";
+  const canSwitchWorkspace = currentUser?.role === "admin";
   const [theme, setTheme] = useState(
     () => document.documentElement.dataset.theme ?? "dark",
   );
@@ -94,14 +96,18 @@ export default function Layout({ mode }: LayoutProps) {
                 })}
               </nav>
             ) : null}
-            {canSwitchToAdmin ? (
+            {canSwitchWorkspace ? (
               <Link
-                aria-label="切换到管理"
+                aria-label={isAdmin ? "切换到应用" : "切换到管理"}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
-                title="切换到管理"
-                to="/admin"
+                title={isAdmin ? "切换到应用" : "切换到管理"}
+                to={isAdmin ? "/app" : "/admin"}
               >
-                <Shield aria-hidden="true" size={18} />
+                {isAdmin ? (
+                  <Home aria-hidden="true" size={18} />
+                ) : (
+                  <Shield aria-hidden="true" size={18} />
+                )}
               </Link>
             ) : null}
             <button
@@ -141,7 +147,7 @@ export default function Layout({ mode }: LayoutProps) {
         <div
           className={[
             "mx-auto grid max-w-md gap-2",
-            isAdmin ? "grid-cols-3" : "grid-cols-5",
+            isAdmin ? "grid-cols-3" : "grid-cols-6",
           ].join(" ")}
         >
           {items.map((item) => {

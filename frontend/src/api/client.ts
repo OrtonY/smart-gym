@@ -209,6 +209,68 @@ export type LeaderboardEntry = {
   metric_type: "duration_minutes" | "calories_burned" | "sessions_count";
 };
 
+export type TrainingPlanItem = {
+  id: number;
+  training_plan_id: number;
+  version_number: number;
+  scheduled_date: string | null;
+  day_of_week: number;
+  sort_order: number;
+  exercise_id: number | null;
+  workout_mode_id: number | null;
+  title: string;
+  sets: number | null;
+  reps: number | null;
+  duration_minutes: number | null;
+  notes: string | null;
+};
+
+export type TrainingPlanItemPayload = Omit<
+  TrainingPlanItem,
+  "id" | "training_plan_id" | "version_number"
+>;
+
+export type TrainingPlanVersion = {
+  id: number;
+  training_plan_id: number;
+  version_number: number;
+  source: "manual" | "ai";
+  change_summary: string | null;
+  created_at: string;
+};
+
+export type TrainingPlanSummary = {
+  id: number;
+  user_id: number;
+  title: string;
+  source: "manual" | "ai";
+  current_version: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TrainingPlanDetail = TrainingPlanSummary & {
+  items: TrainingPlanItem[];
+  versions: TrainingPlanVersion[];
+};
+
+export type TrainingPlanCreatePayload = {
+  title: string;
+  items: TrainingPlanItemPayload[];
+  change_summary?: string | null;
+};
+
+export type TrainingPlanItemsReplacePayload = {
+  items: TrainingPlanItemPayload[];
+  change_summary?: string | null;
+};
+
+export type AiTrainingPlanResponse = {
+  conversation_id: number;
+  plan: TrainingPlanDetail;
+};
+
 export function fetchWorkoutModes() {
   return apiRequest<WorkoutMode[]>("/catalog/workout-modes");
 }
@@ -285,4 +347,50 @@ export function fetchLeaderboard(
     metric_type: metricType,
   });
   return apiRequest<LeaderboardEntry[]>(`/leaderboard?${params.toString()}`);
+}
+
+export function fetchTrainingPlans() {
+  return apiRequest<TrainingPlanSummary[]>("/training-plans");
+}
+
+export function fetchTrainingPlan(planId: number) {
+  return apiRequest<TrainingPlanDetail>(`/training-plans/${planId}`);
+}
+
+export function createTrainingPlan(payload: TrainingPlanCreatePayload) {
+  return apiRequest<TrainingPlanDetail>("/training-plans", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function replaceTrainingPlanItems(
+  planId: number,
+  payload: TrainingPlanItemsReplacePayload,
+) {
+  return apiRequest<TrainingPlanDetail>(`/training-plans/${planId}/items`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function generateAiTrainingPlan(prompt: string, title?: string) {
+  return apiRequest<AiTrainingPlanResponse>("/ai-coach/training-plans/generate", {
+    method: "POST",
+    body: JSON.stringify({ prompt, title: title || undefined }),
+  });
+}
+
+export function adjustAiTrainingPlan(
+  planId: number,
+  message: string,
+  targetDate?: string,
+) {
+  return apiRequest<AiTrainingPlanResponse>(
+    `/ai-coach/training-plans/${planId}/adjust`,
+    {
+      method: "POST",
+      body: JSON.stringify({ message, target_date: targetDate }),
+    },
+  );
 }
