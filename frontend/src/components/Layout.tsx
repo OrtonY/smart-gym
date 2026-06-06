@@ -12,7 +12,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 
@@ -51,8 +51,9 @@ function bottomNavClass({ isActive }: { isActive: boolean }) {
 export default function Layout({ mode }: LayoutProps) {
   const isAdmin = mode === "admin";
   const items = isAdmin ? adminNavItems : userNavItems;
-  const { logout } = useAuth();
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
+  const canSwitchToAdmin = !isAdmin && currentUser?.role === "admin";
   const [theme, setTheme] = useState(
     () => document.documentElement.dataset.theme ?? "dark",
   );
@@ -92,6 +93,16 @@ export default function Layout({ mode }: LayoutProps) {
                   );
                 })}
               </nav>
+            ) : null}
+            {canSwitchToAdmin ? (
+              <Link
+                aria-label="切换到管理"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+                title="切换到管理"
+                to="/admin"
+              >
+                <Shield aria-hidden="true" size={18} />
+              </Link>
             ) : null}
             <button
               aria-label={theme === "dark" ? "切换浅色主题" : "切换深色主题"}

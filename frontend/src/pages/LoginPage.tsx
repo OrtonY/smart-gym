@@ -29,8 +29,8 @@ export default function LoginPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      const user = await login(email.trim(), password);
-      const redirectTo = explicitRedirectTo ?? (user.role === "admin" ? "/admin" : "/app");
+      await login(email.trim(), password);
+      const redirectTo = explicitRedirectTo ?? "/app";
       navigate(redirectTo, { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "登录失败");
