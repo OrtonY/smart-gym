@@ -57,6 +57,16 @@ function parseOptionalId(value: string) {
   return value === "" ? null : Number(value);
 }
 
+async function fetchTrainingData() {
+  const [nextModes, nextExercises, nextSessions, nextSummary] = await Promise.all([
+    fetchWorkoutModes(),
+    fetchExercises(),
+    fetchWorkoutSessions(),
+    fetchWorkoutSummary(),
+  ]);
+  return { nextModes, nextExercises, nextSessions, nextSummary };
+}
+
 export default function TrainingPage() {
   const [modes, setModes] = useState<WorkoutMode[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -71,12 +81,8 @@ export default function TrainingPage() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [nextModes, nextExercises, nextSessions, nextSummary] = await Promise.all([
-        fetchWorkoutModes(),
-        fetchExercises(),
-        fetchWorkoutSessions(),
-        fetchWorkoutSummary(),
-      ]);
+      const { nextModes, nextExercises, nextSessions, nextSummary } =
+        await fetchTrainingData();
       setModes(nextModes);
       setExercises(nextExercises);
       setSessions(nextSessions);
@@ -90,7 +96,32 @@ export default function TrainingPage() {
   }
 
   useEffect(() => {
-    void loadData();
+    let isMounted = true;
+    setIsLoading(true);
+    void fetchTrainingData()
+      .then(({ nextModes, nextExercises, nextSessions, nextSummary }) => {
+        if (!isMounted) {
+          return;
+        }
+        setModes(nextModes);
+        setExercises(nextExercises);
+        setSessions(nextSessions);
+        setSummary(nextSummary);
+        setError(null);
+      })
+      .catch((caught) => {
+        if (isMounted) {
+          setError(caught instanceof Error ? caught.message : "训练数据读取失败");
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const modeNames = useMemo(
@@ -285,6 +316,7 @@ export default function TrainingPage() {
             <input
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
               inputMode="numeric"
+              max="1440"
               min="1"
               required
               type="number"
@@ -302,6 +334,7 @@ export default function TrainingPage() {
             <input
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
               inputMode="numeric"
+              max="10000"
               min="0"
               required
               type="number"

@@ -25,6 +25,13 @@ function navClass({ isActive }: { isActive: boolean }) {
   ].join(" ");
 }
 
+function bottomNavClass({ isActive }: { isActive: boolean }) {
+  return [
+    "flex min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 py-1.5 text-[11px] font-medium leading-none transition",
+    isActive ? "bg-gym-teal text-white" : "text-slate-600 hover:bg-slate-100",
+  ].join(" ");
+}
+
 export default function Layout({ mode }: LayoutProps) {
   const isAdmin = mode === "admin";
   const items = isAdmin ? adminNavItems : userNavItems;
@@ -74,9 +81,9 @@ export default function Layout({ mode }: LayoutProps) {
           {items.map((item) => {
             const Icon = item.icon;
             return (
-              <NavLink key={item.to} to={item.to} end className={navClass}>
+              <NavLink key={item.to} to={item.to} end className={bottomNavClass}>
                 <Icon aria-hidden="true" size={18} />
-                <span>{item.label}</span>
+                <span className="max-w-full truncate">{item.label}</span>
               </NavLink>
             );
           })}

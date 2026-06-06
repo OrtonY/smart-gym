@@ -35,6 +35,7 @@ export default function LeaderboardPage() {
     let isMounted = true;
     setIsLoading(true);
     setError(null);
+    setEntries([]);
     fetchLeaderboard(periodType, metricType)
       .then((nextEntries) => {
         if (isMounted) {
@@ -105,6 +106,11 @@ export default function LeaderboardPage() {
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
       <div className="space-y-3">
+        {isLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-soft">
+            榜单加载中
+          </div>
+        ) : null}
         {entries.map((entry) => (
           <article
             key={`${entry.period_type}-${entry.metric_type}-${entry.rank}-${entry.display_name}`}
