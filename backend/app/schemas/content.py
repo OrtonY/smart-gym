@@ -6,10 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class WorkoutModeBase(BaseModel):
-    code: str = Field(..., min_length=1, max_length=80)
+    code: str = Field(min_length=2, max_length=80)
     name: str = Field(..., min_length=1, max_length=120)
     description: Optional[str] = None
-    estimated_calories_per_hour: int = Field(default=300, ge=0)
+    estimated_calories_per_hour: int = Field(ge=0, le=2000)
     is_active: bool = True
 
 
@@ -18,11 +18,12 @@ class WorkoutModeCreate(WorkoutModeBase):
 
 
 class WorkoutModeUpdate(BaseModel):
-    code: Optional[str] = Field(default=None, min_length=1, max_length=80)
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     description: Optional[str] = None
-    estimated_calories_per_hour: Optional[int] = Field(default=None, ge=0)
+    estimated_calories_per_hour: Optional[int] = Field(default=None, ge=0, le=2000)
     is_active: Optional[bool] = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class WorkoutModeResponse(WorkoutModeBase):
@@ -32,10 +33,10 @@ class WorkoutModeResponse(WorkoutModeBase):
 
 
 class ExerciseBase(BaseModel):
-    slug: str = Field(..., min_length=1, max_length=120)
+    slug: str = Field(min_length=2, max_length=120)
     name: str = Field(..., min_length=1, max_length=120)
     target_muscle: str = Field(..., min_length=1, max_length=120)
-    difficulty: str = Field(default="beginner", min_length=1, max_length=40)
+    difficulty: str = Field(pattern="^(beginner|intermediate|advanced)$")
     description: Optional[str] = None
     tutorial_url: Optional[str] = Field(default=None, max_length=500)
     media_url: Optional[str] = Field(default=None, max_length=500)
@@ -48,15 +49,18 @@ class ExerciseCreate(ExerciseBase):
 
 
 class ExerciseUpdate(BaseModel):
-    slug: Optional[str] = Field(default=None, min_length=1, max_length=120)
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     target_muscle: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    difficulty: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    difficulty: Optional[str] = Field(
+        default=None, pattern="^(beginner|intermediate|advanced)$"
+    )
     description: Optional[str] = None
     tutorial_url: Optional[str] = Field(default=None, max_length=500)
     media_url: Optional[str] = Field(default=None, max_length=500)
     detection_rules: Optional[dict[str, Any]] = None
     is_published: Optional[bool] = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ExerciseResponse(ExerciseBase):
