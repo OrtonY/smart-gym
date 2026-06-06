@@ -60,7 +60,7 @@ def upgrade() -> None:
     sa.Column('value', sa.Float(), nullable=False),
     sa.Column('rank', sa.Integer(), nullable=False),
     sa.Column('generated_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_leaderboard_snapshots_id'), 'leaderboard_snapshots', ['id'], unique=False)
@@ -84,7 +84,7 @@ def upgrade() -> None:
     sa.Column('notes', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['exercise_id'], ['exercise_library.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['workout_mode_id'], ['workout_modes.id'], ),
     sa.PrimaryKeyConstraint('id')
     )

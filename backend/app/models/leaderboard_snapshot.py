@@ -18,7 +18,7 @@ class LeaderboardSnapshot(Base):
     period_start: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), index=True, nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
