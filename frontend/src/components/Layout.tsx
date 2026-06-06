@@ -1,4 +1,4 @@
-import { Activity, Bot, Dumbbell, Home, Settings, Shield } from "lucide-react";
+import { Activity, Bot, Dumbbell, Home, Settings, Shield, Trophy } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 type LayoutProps = {
@@ -8,6 +8,7 @@ type LayoutProps = {
 const userNavItems = [
   { to: "/app", label: "首页", icon: Home },
   { to: "/app/train", label: "训练", icon: Dumbbell },
+  { to: "/app/leaderboard", label: "榜单", icon: Trophy },
   { to: "/app/ai-settings", label: "AI", icon: Bot },
   { to: "/app/profile", label: "我的", icon: Settings },
 ];
@@ -67,7 +68,7 @@ export default function Layout({ mode }: LayoutProps) {
         <div
           className={[
             "mx-auto grid max-w-md gap-2",
-            isAdmin ? "grid-cols-2" : "grid-cols-4",
+            isAdmin ? "grid-cols-2" : "grid-cols-5",
           ].join(" ")}
         >
           {items.map((item) => {
