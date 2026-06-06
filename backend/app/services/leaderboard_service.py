@@ -5,8 +5,10 @@ from datetime import date, datetime, time, timedelta
 from typing import List, Tuple
 
 from sqlalchemy import delete, desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.leaderboard_refresh_state import LeaderboardRefreshState
 from app.models.leaderboard_snapshot import LeaderboardSnapshot
 from app.models.user import User
 from app.models.workout_session import WorkoutSession
@@ -68,16 +70,25 @@ def refresh_leaderboard(
         )
     )
 
-    if not rows:
-        db.execute(
-            delete(LeaderboardSnapshot).where(
-                LeaderboardSnapshot.period_type == period_type,
-                LeaderboardSnapshot.metric_type == metric_type,
-                LeaderboardSnapshot.period_start <= period_start,
+    refresh_state = db.execute(
+        select(LeaderboardRefreshState).where(
+            LeaderboardRefreshState.period_type == period_type,
+            LeaderboardRefreshState.metric_type == metric_type,
+            LeaderboardRefreshState.period_start == period_start,
+        )
+    ).scalar_one_or_none()
+    if refresh_state is None:
+        db.add(
+            LeaderboardRefreshState(
+                period_type=period_type,
+                metric_type=metric_type,
+                period_start=period_start,
+                period_end=period_end,
             )
         )
-        db.commit()
-        return []
+    else:
+        refresh_state.period_end = period_end
+        refresh_state.refreshed_at = datetime.utcnow()
 
     snapshots = [
         LeaderboardSnapshot(
@@ -86,7 +97,7 @@ def refresh_leaderboard(
             period_start=period_start,
             period_end=period_end,
             user_id=row.id,
-            display_name=row.display_name or f"用户{row.id}",
+            display_name=row.display_name or "匿名用户",
             avatar_url=row.avatar_url,
             value=float(row.value),
             rank=index,
@@ -94,21 +105,28 @@ def refresh_leaderboard(
         for index, row in enumerate(rows, start=1)
     ]
     db.add_all(snapshots)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return list_leaderboard(db, period_type, metric_type)
     return snapshots
 
 
 def list_leaderboard(
     db: Session, period_type: str, metric_type: str
 ) -> List[LeaderboardSnapshot]:
-    latest_period_start = db.execute(
-        select(func.max(LeaderboardSnapshot.period_start)).where(
-            LeaderboardSnapshot.period_type == period_type,
-            LeaderboardSnapshot.metric_type == metric_type,
+    latest_refresh = db.execute(
+        select(LeaderboardRefreshState)
+        .where(
+            LeaderboardRefreshState.period_type == period_type,
+            LeaderboardRefreshState.metric_type == metric_type,
         )
-    ).scalar_one()
+        .order_by(LeaderboardRefreshState.period_start.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
-    if latest_period_start is None:
+    if latest_refresh is None:
         return []
 
     return list(
@@ -117,7 +135,8 @@ def list_leaderboard(
             .where(
                 LeaderboardSnapshot.period_type == period_type,
                 LeaderboardSnapshot.metric_type == metric_type,
-                LeaderboardSnapshot.period_start == latest_period_start,
+                LeaderboardSnapshot.period_start == latest_refresh.period_start,
+                LeaderboardSnapshot.period_end == latest_refresh.period_end,
             )
             .order_by(LeaderboardSnapshot.rank.asc())
         ).scalars()

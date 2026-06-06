@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.leaderboard import (
@@ -18,7 +18,7 @@ router = APIRouter()
 @router.post("/refresh", response_model=list[LeaderboardEntryResponse])
 def refresh_public_leaderboard(
     payload: LeaderboardRefreshRequest,
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> list[LeaderboardEntryResponse]:
     return refresh_leaderboard(
@@ -35,7 +35,7 @@ def list_public_leaderboard(
     metric_type: str = Query(
         pattern="^(duration_minutes|calories_burned|sessions_count)$"
     ),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[LeaderboardEntryResponse]:
     return list_leaderboard(db, period_type=period_type, metric_type=metric_type)

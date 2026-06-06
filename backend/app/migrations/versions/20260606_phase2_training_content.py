@@ -48,6 +48,21 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_workout_modes_code'), 'workout_modes', ['code'], unique=True)
     op.create_index(op.f('ix_workout_modes_id'), 'workout_modes', ['id'], unique=False)
+    op.create_table('leaderboard_refresh_states',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('period_type', sa.String(length=40), nullable=False),
+    sa.Column('metric_type', sa.String(length=60), nullable=False),
+    sa.Column('period_start', sa.Date(), nullable=False),
+    sa.Column('period_end', sa.Date(), nullable=False),
+    sa.Column('refreshed_at', sa.DateTime(), nullable=False),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('period_type', 'metric_type', 'period_start', name='uq_leaderboard_refresh_state_period_metric')
+    )
+    op.create_index(op.f('ix_leaderboard_refresh_states_id'), 'leaderboard_refresh_states', ['id'], unique=False)
+    op.create_index(op.f('ix_leaderboard_refresh_states_metric_type'), 'leaderboard_refresh_states', ['metric_type'], unique=False)
+    op.create_index(op.f('ix_leaderboard_refresh_states_period_end'), 'leaderboard_refresh_states', ['period_end'], unique=False)
+    op.create_index(op.f('ix_leaderboard_refresh_states_period_start'), 'leaderboard_refresh_states', ['period_start'], unique=False)
+    op.create_index(op.f('ix_leaderboard_refresh_states_period_type'), 'leaderboard_refresh_states', ['period_type'], unique=False)
     op.create_table('leaderboard_snapshots',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('period_type', sa.String(length=40), nullable=False),
@@ -106,6 +121,12 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_leaderboard_snapshots_metric_type'), table_name='leaderboard_snapshots')
     op.drop_index(op.f('ix_leaderboard_snapshots_id'), table_name='leaderboard_snapshots')
     op.drop_table('leaderboard_snapshots')
+    op.drop_index(op.f('ix_leaderboard_refresh_states_period_type'), table_name='leaderboard_refresh_states')
+    op.drop_index(op.f('ix_leaderboard_refresh_states_period_start'), table_name='leaderboard_refresh_states')
+    op.drop_index(op.f('ix_leaderboard_refresh_states_period_end'), table_name='leaderboard_refresh_states')
+    op.drop_index(op.f('ix_leaderboard_refresh_states_metric_type'), table_name='leaderboard_refresh_states')
+    op.drop_index(op.f('ix_leaderboard_refresh_states_id'), table_name='leaderboard_refresh_states')
+    op.drop_table('leaderboard_refresh_states')
     op.drop_index(op.f('ix_workout_modes_id'), table_name='workout_modes')
     op.drop_index(op.f('ix_workout_modes_code'), table_name='workout_modes')
     op.drop_table('workout_modes')
