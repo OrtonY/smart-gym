@@ -219,6 +219,8 @@ export function fetchExercises() {
 
 export type WorkoutModePayload = Omit<WorkoutMode, "id">;
 export type ExercisePayload = Omit<Exercise, "id">;
+export type WorkoutModeUpdatePayload = Partial<Omit<WorkoutModePayload, "code">>;
+export type ExerciseUpdatePayload = Partial<Omit<ExercisePayload, "slug">>;
 
 export function createAdminWorkoutMode(payload: WorkoutModePayload) {
   return apiRequest<WorkoutMode>("/admin/workout-modes", {
@@ -229,7 +231,7 @@ export function createAdminWorkoutMode(payload: WorkoutModePayload) {
 
 export function updateAdminWorkoutMode(
   modeId: number,
-  payload: Partial<WorkoutModePayload>,
+  payload: WorkoutModeUpdatePayload,
 ) {
   return apiRequest<WorkoutMode>(`/admin/workout-modes/${modeId}`, {
     method: "PUT",
@@ -244,7 +246,7 @@ export function createAdminExercise(payload: ExercisePayload) {
   });
 }
 
-export function updateAdminExercise(exerciseId: number, payload: Partial<ExercisePayload>) {
+export function updateAdminExercise(exerciseId: number, payload: ExerciseUpdatePayload) {
   return apiRequest<Exercise>(`/admin/exercises/${exerciseId}`, {
     method: "PUT",
     body: JSON.stringify(payload),

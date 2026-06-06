@@ -57,8 +57,10 @@ export default function AdminContentPage() {
       setModes(nextModes);
       setExercises(nextExercises);
       setError(null);
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "内容读取失败");
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -96,19 +98,27 @@ export default function AdminContentPage() {
     event.preventDefault();
     setError(null);
     setMessage(null);
+
+    const code = workoutModeForm.code.trim();
+    const name = workoutModeForm.name.trim();
+    if (!code || !name) {
+      setError("请填写运动模式编码和名称");
+      return;
+    }
+
     setIsSavingMode(true);
 
     try {
       await createAdminWorkoutMode({
-        code: workoutModeForm.code.trim(),
-        name: workoutModeForm.name.trim(),
+        code,
+        name,
         description: "管理端创建的运动模式",
         estimated_calories_per_hour: 360,
         is_active: true,
       });
       setWorkoutModeForm(emptyWorkoutModeForm);
-      setMessage("运动模式已创建");
-      await loadContent();
+      const didReload = await loadContent();
+      setMessage(didReload ? "运动模式已创建" : "运动模式已创建，列表刷新失败");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "运动模式创建失败");
     } finally {
@@ -120,12 +130,20 @@ export default function AdminContentPage() {
     event.preventDefault();
     setError(null);
     setMessage(null);
+
+    const slug = exerciseForm.slug.trim();
+    const name = exerciseForm.name.trim();
+    if (!slug || !name) {
+      setError("请填写动作教程 Slug 和名称");
+      return;
+    }
+
     setIsSavingExercise(true);
 
     try {
       await createAdminExercise({
-        slug: exerciseForm.slug.trim(),
-        name: exerciseForm.name.trim(),
+        slug,
+        name,
         target_muscle: "全身",
         difficulty: "beginner",
         description: "管理端创建的动作教程",
@@ -135,8 +153,8 @@ export default function AdminContentPage() {
         is_published: true,
       });
       setExerciseForm(emptyExerciseForm);
-      setMessage("动作教程已创建");
-      await loadContent();
+      const didReload = await loadContent();
+      setMessage(didReload ? "动作教程已创建" : "动作教程已创建，列表刷新失败");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "动作教程创建失败");
     } finally {
