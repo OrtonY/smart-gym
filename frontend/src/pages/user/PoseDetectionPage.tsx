@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CircleStop, Play, Save, Sparkles } from "lucide-react";
+import {
+  Camera,
+  CircleStop,
+  Copy,
+  Play,
+  Save,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import {
@@ -15,10 +23,23 @@ import {
 import { loadPoseLandmarker } from "../../pose/mediapipe";
 import {
   createRepCounter,
+  normalizePoseDetectionRules,
   type PoseFrameSummary,
   type PoseLandmark,
 } from "../../pose/poseMetrics";
-import { getBrowserCameraSupportError } from "../../pose/cameraSupport";
+import {
+  formatCameraStartupError,
+  getBrowserCameraSupportError,
+} from "../../pose/cameraSupport";
+import {
+  clearPoseDebugLogs,
+  emitPoseError,
+  emitPoseLog,
+  formatPoseDebugLogEntry,
+  subscribePoseDebugLogs,
+  toErrorDiagnostics,
+  type PoseDebugLogEntry,
+} from "../../pose/debugLog";
 
 function numericParam(value: string | null) {
   if (!value) {
@@ -26,6 +47,35 @@ function numericParam(value: string | null) {
   }
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function cameraEnvironmentDiagnostics() {
+  return {
+    protocol: window.location.protocol,
+    host: window.location.host,
+    isSecureContext: window.isSecureContext,
+    hasMediaDevices: Boolean(navigator.mediaDevices),
+    hasGetUserMedia: typeof navigator.mediaDevices?.getUserMedia === "function",
+    userAgent: navigator.userAgent,
+  };
+}
+
+function videoTrackDiagnostics(stream: MediaStream) {
+  return stream.getVideoTracks().map((track) => {
+    const settings = track.getSettings();
+    return {
+      label: track.label,
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+      settings: {
+        facingMode: settings.facingMode,
+        width: settings.width,
+        height: settings.height,
+        frameRate: settings.frameRate,
+      },
+    };
+  });
 }
 
 function drawLandmarks(
@@ -63,6 +113,7 @@ export default function PoseDetectionPage() {
   const exerciseId = numericParam(searchParams.get("exerciseId"));
   const workoutModeId = numericParam(searchParams.get("workoutModeId"));
   const titleParam = searchParams.get("title");
+  const isDebugMode = searchParams.get("debug") === "1";
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -82,6 +133,8 @@ export default function PoseDetectionPage() {
   const [savedResult, setSavedResult] = useState<PoseDetectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [debugLogs, setDebugLogs] = useState<PoseDebugLogEntry[]>([]);
+  const [debugCopyStatus, setDebugCopyStatus] = useState<string | null>(null);
 
   const exercise = useMemo(
     () => exercises.find((item) => item.id === exerciseId) ?? null,
@@ -93,8 +146,20 @@ export default function PoseDetectionPage() {
   );
   const displayTitle =
     titleParam?.trim() || exercise?.name || workoutMode?.name || "动作检测";
+  const debugLogText = useMemo(
+    () => debugLogs.map(formatPoseDebugLogEntry).join("\n"),
+    [debugLogs],
+  );
 
   function stopCamera(updateState = true) {
+    const activeStream = streamRef.current;
+    if (activeStream || frameRef.current !== null) {
+      emitPoseLog("camera:stop", {
+        hadAnimationFrame: frameRef.current !== null,
+        tracks: activeStream ? videoTrackDiagnostics(activeStream) : [],
+        updateState,
+      });
+    }
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
@@ -105,6 +170,13 @@ export default function PoseDetectionPage() {
       setIsRunning(false);
     }
   }
+
+  useEffect(() => {
+    if (!isDebugMode) {
+      return undefined;
+    }
+    return subscribePoseDebugLogs(setDebugLogs);
+  }, [isDebugMode]);
 
   useEffect(() => {
     let isMounted = true;
@@ -127,7 +199,20 @@ export default function PoseDetectionPage() {
     };
   }, []);
 
+  async function copyDebugLogs() {
+    setDebugCopyStatus(null);
+    try {
+      await navigator.clipboard.writeText(debugLogText || "暂无调试日志");
+      setDebugCopyStatus("已复制");
+    } catch {
+      setDebugCopyStatus("复制失败，请长按日志手动选择");
+    }
+  }
+
   async function startCamera() {
+    const runId = `${Date.now()}`;
+    const detectionRules = normalizePoseDetectionRules(exercise?.detection_rules);
+    counterRef.current = createRepCounter(detectionRules);
     setError(null);
     setStatus(null);
     setSavedResult(null);
@@ -138,47 +223,127 @@ export default function PoseDetectionPage() {
     startedAtRef.current = new Date();
 
     try {
+      emitPoseLog("startCamera:begin", {
+        runId,
+        ruleType: detectionRules.type,
+        exerciseId,
+        environment: cameraEnvironmentDiagnostics(),
+      });
       const cameraSupportError = getBrowserCameraSupportError();
       if (cameraSupportError) {
+        emitPoseLog("startCamera:support-check-failed", {
+          runId,
+          cameraSupportError,
+        });
         throw new Error(cameraSupportError);
       }
 
       const video = videoRef.current;
       if (!video) {
+        emitPoseLog("startCamera:video-ref-missing", { runId });
         throw new Error("视频组件未就绪");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
+
+      const constraints: MediaStreamConstraints = {
         video: { facingMode: "user" },
         audio: false,
+      };
+      emitPoseLog("getUserMedia:request", { runId, constraints });
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      emitPoseLog("getUserMedia:success", {
+        runId,
+        tracks: videoTrackDiagnostics(stream),
       });
       streamRef.current = stream;
       video.srcObject = stream;
+      emitPoseLog("video:play-request", {
+        runId,
+        readyState: video.readyState,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+      });
       await video.play();
+      emitPoseLog("video:play-success", {
+        runId,
+        readyState: video.readyState,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+      });
+      emitPoseLog("mediapipe:load-request", { runId });
       const landmarker = await loadPoseLandmarker();
+      emitPoseLog("mediapipe:load-success", { runId });
       setIsRunning(true);
 
+      let didLogFirstFrame = false;
+      let didLogFirstLandmarks = false;
       const loop = () => {
-        const result = landmarker.detectForVideo(video, performance.now());
-        const landmarks = (result.landmarks[0] ?? []) as PoseLandmark[];
-        if (landmarks.length > 0) {
-          const nextSnapshot = counterRef.current.ingest(
-            landmarks,
-            performance.now(),
-          );
-          setSnapshot(nextSnapshot);
-          setSnapshots((current) => [...current.slice(-29), nextSnapshot]);
-          setLandmarkSamples((current) => [...current.slice(-4), landmarks]);
-          const canvas = canvasRef.current;
-          if (canvas) {
-            drawLandmarks(canvas, video, landmarks);
+        try {
+          const timestampMs = performance.now();
+          const result = landmarker.detectForVideo(video, timestampMs);
+          const landmarks = (result.landmarks[0] ?? []) as PoseLandmark[];
+          if (!didLogFirstFrame) {
+            didLogFirstFrame = true;
+            emitPoseLog("detect:first-frame", {
+              runId,
+              landmarkSets: result.landmarks.length,
+              videoReadyState: video.readyState,
+              videoWidth: video.videoWidth,
+              videoHeight: video.videoHeight,
+            });
           }
+          if (landmarks.length > 0) {
+            if (!didLogFirstLandmarks) {
+              didLogFirstLandmarks = true;
+              emitPoseLog("detect:first-landmarks", {
+                runId,
+                landmarkCount: landmarks.length,
+              });
+            }
+            const nextSnapshot = counterRef.current.ingest(
+              landmarks,
+              timestampMs,
+            );
+            setSnapshot(nextSnapshot);
+            setSnapshots((current) => [...current.slice(-29), nextSnapshot]);
+            setLandmarkSamples((current) => [...current.slice(-4), landmarks]);
+            const canvas = canvasRef.current;
+            if (canvas) {
+              drawLandmarks(canvas, video, landmarks);
+            }
+          }
+          frameRef.current = requestAnimationFrame(loop);
+        } catch (caught) {
+          stopCamera();
+          const formattedError = formatCameraStartupError(caught);
+          emitPoseError(
+            "detect:error",
+            {
+              runId,
+              formattedError,
+              diagnostics: toErrorDiagnostics(caught),
+              videoReadyState: video.readyState,
+              videoWidth: video.videoWidth,
+              videoHeight: video.videoHeight,
+            },
+            caught,
+          );
+          setError(formattedError);
         }
-        frameRef.current = requestAnimationFrame(loop);
       };
       loop();
     } catch (caught) {
       stopCamera();
-      setError(caught instanceof Error ? caught.message : "摄像头或动作检测启动失败");
+      const formattedError = formatCameraStartupError(caught);
+      emitPoseError(
+        "startCamera:error",
+        {
+          runId,
+          formattedError,
+          diagnostics: toErrorDiagnostics(caught),
+        },
+        caught,
+      );
+      setError(formattedError);
     }
   }
 
@@ -222,6 +387,8 @@ export default function PoseDetectionPage() {
         metrics_json: {
           source: "mediapipe_pose_landmarker",
           display_title: displayTitle,
+          rule_type: counterRef.current.rules.type,
+          rule_mode: counterRef.current.rules.mode,
           snapshots,
           detection_rules: exercise?.detection_rules ?? null,
         },
@@ -271,6 +438,40 @@ export default function PoseDetectionPage() {
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {status ? <p className="text-sm text-gym-teal">{status}</p> : null}
+      {isDebugMode ? (
+        <article className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">调试日志</h3>
+            <div className="flex items-center gap-2">
+              {debugCopyStatus ? (
+                <span className="text-xs text-amber-800">{debugCopyStatus}</span>
+              ) : null}
+              <button
+                className="inline-flex items-center gap-1 rounded-md border border-amber-400 px-2 py-1 text-xs font-semibold text-amber-950"
+                onClick={() => void copyDebugLogs()}
+                type="button"
+              >
+                <Copy aria-hidden="true" size={14} />
+                复制
+              </button>
+              <button
+                className="inline-flex items-center gap-1 rounded-md border border-amber-400 px-2 py-1 text-xs font-semibold text-amber-950"
+                onClick={() => {
+                  clearPoseDebugLogs();
+                  setDebugCopyStatus(null);
+                }}
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={14} />
+                清空
+              </button>
+            </div>
+          </div>
+          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+            {debugLogText || "暂无日志，点击开始后会显示。"}
+          </pre>
+        </article>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-950 shadow-soft">
