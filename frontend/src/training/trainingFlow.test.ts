@@ -17,5 +17,6 @@ describe("training flow helpers", () => {
   it("advances to the next step without overflowing", () => {
     expect(nextStepIndex(0, 3)).toBe(1);
     expect(nextStepIndex(2, 3)).toBe(2);
+    expect(nextStepIndex(0, 0)).toBe(0);
   });
 });
