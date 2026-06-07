@@ -4,6 +4,7 @@ from app.models.ai_message import AiMessage
 from app.models.exercise import Exercise
 from app.models.leaderboard_refresh_state import LeaderboardRefreshState
 from app.models.leaderboard_snapshot import LeaderboardSnapshot
+from app.models.pose_detection_result import PoseDetectionResult
 from app.models.training_plan import TrainingPlan
 from app.models.training_plan_item import TrainingPlanItem
 from app.models.training_plan_version import TrainingPlanVersion
@@ -19,6 +20,7 @@ __all__ = [
     "Exercise",
     "LeaderboardRefreshState",
     "LeaderboardSnapshot",
+    "PoseDetectionResult",
     "TrainingPlan",
     "TrainingPlanItem",
     "TrainingPlanVersion",
