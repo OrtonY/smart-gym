@@ -1,10 +1,11 @@
-import { BookOpen, Dumbbell, ListChecks, RadioTower } from "lucide-react";
+import { BookOpen, Dumbbell, Layers3, ListChecks, RadioTower } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function AdminHomePage() {
   const items = [
     { title: "运动模式", description: "配置训练类型、热量估算和启用状态", href: "/admin/workout-modes", icon: RadioTower },
     { title: "动作教程", description: "配置动作库、教程素材和发布状态", href: "/admin/exercises", icon: BookOpen },
+    { title: "训练模板", description: "维护推荐训练和课表复制来源", href: "/admin/workout-templates", icon: Layers3 },
     { title: "发布检查", description: "查看用户端可见的模式和动作", href: "/admin/workout-modes", icon: ListChecks },
     { title: "动作规则", description: "维护动作检测规则 JSON", href: "/admin/exercises", icon: Dumbbell },
   ];
@@ -17,7 +18,7 @@ export default function AdminHomePage() {
           内容、课程和动作规则维护入口。
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {items.map((item) => {
           const Icon = item.icon;
           return (
