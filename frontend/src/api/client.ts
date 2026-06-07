@@ -192,11 +192,83 @@ export type WorkoutSession = {
   calories_burned: number;
   reps: number | null;
   score: number | null;
-  status: "completed" | "abandoned";
+  status: "in_progress" | "completed" | "partial" | "abandoned";
+  source_type: "free" | "plan" | "template";
+  source_plan_id: number | null;
+  source_plan_item_id: number | null;
+  source_template_id: number | null;
+  pose_detection_enabled: boolean;
+  completed_steps_count: number;
+  total_steps_count: number;
+  notes: string | null;
+  steps?: WorkoutSessionStep[];
+};
+
+export type WorkoutSessionPayload = Omit<
+  WorkoutSession,
+  | "id"
+  | "user_id"
+  | "source_type"
+  | "source_plan_id"
+  | "source_plan_item_id"
+  | "source_template_id"
+  | "pose_detection_enabled"
+  | "completed_steps_count"
+  | "total_steps_count"
+  | "steps"
+>;
+
+export type WorkoutSessionStep = {
+  id: number;
+  sort_order: number;
+  exercise_id: number | null;
+  workout_mode_id: number | null;
+  title: string;
+  planned_sets: number | null;
+  planned_reps: number | null;
+  planned_duration_seconds: number | null;
+  planned_rest_seconds: number | null;
+  actual_reps: number | null;
+  actual_duration_seconds: number | null;
+  score: number | null;
+  status: "planned" | "completed" | "partial" | "skipped";
+  pose_detection_result_id: number | null;
   notes: string | null;
 };
 
-export type WorkoutSessionPayload = Omit<WorkoutSession, "id" | "user_id">;
+export type WorkoutSessionStartPayload = {
+  source_type: "plan" | "template" | "free";
+  source_plan_id?: number | null;
+  source_plan_item_id?: number | null;
+  source_template_id?: number | null;
+  pose_detection_enabled: boolean;
+};
+
+export type WorkoutSessionStartResponse = WorkoutSession & {
+  steps: WorkoutSessionStep[];
+};
+
+export type WorkoutSessionStepFinishPayload = {
+  sort_order: number;
+  title: string;
+  actual_reps?: number | null;
+  actual_duration_seconds?: number | null;
+  score?: number | null;
+  status: "completed" | "partial" | "skipped";
+  pose_detection_result_id?: number | null;
+  notes?: string | null;
+};
+
+export type WorkoutSessionFinishPayload = {
+  ended_at: string;
+  duration_minutes: number;
+  calories_burned: number;
+  status: "completed" | "partial" | "abandoned";
+  reps?: number | null;
+  score?: number | null;
+  notes?: string | null;
+  steps: WorkoutSessionStepFinishPayload[];
+};
 
 export type PoseDetectionResult = {
   id: number;
@@ -328,19 +400,45 @@ export type TrainingPlanItem = {
   sets: number | null;
   reps: number | null;
   duration_minutes: number | null;
+  duration_seconds: number | null;
+  rest_seconds: number | null;
+  instruction: string | null;
+  source_template_id: number | null;
+  source_template_step_id: number | null;
+  entry_type: "scheduled" | "ad_hoc";
+  status: "planned" | "completed" | "partial" | "skipped" | "rescheduled";
+  linked_workout_session_id: number | null;
+  completed_at: string | null;
+  actual_duration_seconds: number | null;
+  actual_score: number | null;
   notes: string | null;
 };
 
-export type TrainingPlanItemPayload = Omit<
-  TrainingPlanItem,
-  "id" | "training_plan_id" | "version_number"
->;
+export type TrainingPlanItemPayload = {
+  scheduled_date: string | null;
+  day_of_week: number;
+  sort_order: number;
+  exercise_id: number | null;
+  workout_mode_id: number | null;
+  title: string;
+  sets: number | null;
+  reps: number | null;
+  duration_minutes: number | null;
+  duration_seconds?: number | null;
+  rest_seconds?: number | null;
+  instruction?: string | null;
+  source_template_id?: number | null;
+  source_template_step_id?: number | null;
+  entry_type?: "scheduled" | "ad_hoc";
+  status?: "planned" | "completed" | "partial" | "skipped" | "rescheduled";
+  notes: string | null;
+};
 
 export type TrainingPlanVersion = {
   id: number;
   training_plan_id: number;
   version_number: number;
-  source: "manual" | "ai";
+  source: string;
   change_summary: string | null;
   created_at: string;
 };
@@ -349,7 +447,7 @@ export type TrainingPlanSummary = {
   id: number;
   user_id: number;
   title: string;
-  source: "manual" | "ai";
+  source: string;
   current_version: number;
   is_active: boolean;
   created_at: string;
@@ -377,12 +475,144 @@ export type AiTrainingPlanResponse = {
   plan: TrainingPlanDetail;
 };
 
+export type WorkoutTemplateStep = {
+  id: number;
+  workout_template_id: number;
+  sort_order: number;
+  exercise_id: number | null;
+  workout_mode_id: number | null;
+  title: string;
+  sets: number | null;
+  reps: number | null;
+  duration_seconds: number | null;
+  rest_seconds: number | null;
+  instruction: string | null;
+  allow_pose_detection: boolean;
+};
+
+export type WorkoutTemplate = {
+  id: number;
+  slug: string;
+  title: string;
+  description: string | null;
+  goal: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  target_muscles: string;
+  estimated_duration_minutes: number;
+  cover_url: string | null;
+  tags: string[];
+  recommendation_weight: number;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+  steps: WorkoutTemplateStep[];
+};
+
+export type WorkoutTemplateStepPayload = Omit<
+  WorkoutTemplateStep,
+  "id" | "workout_template_id"
+>;
+
+export type WorkoutTemplatePayload = Omit<
+  WorkoutTemplate,
+  "id" | "created_at" | "updated_at" | "steps"
+> & {
+  steps: WorkoutTemplateStepPayload[];
+};
+
+export type WorkoutTemplateUpdatePayload = Partial<WorkoutTemplatePayload>;
+
+export type WorkoutTemplateFilters = {
+  goal?: string;
+  difficulty?: WorkoutTemplate["difficulty"];
+  target?: string;
+  max_duration?: number;
+};
+
+export type WorkoutTemplateApplyPayload = {
+  scheduled_date: string;
+  plan_title?: string;
+};
+
+export type TodayWorkoutStep = {
+  id: number | null;
+  sort_order: number;
+  exercise_id: number | null;
+  workout_mode_id: number | null;
+  title: string;
+  sets: number | null;
+  reps: number | null;
+  duration_seconds: number | null;
+  rest_seconds: number | null;
+  instruction: string | null;
+  allow_pose_detection: boolean;
+};
+
+export type TodayWorkout = {
+  source_type: "plan" | "template" | "empty";
+  source_id: number | null;
+  title: string;
+  description: string | null;
+  estimated_duration_minutes: number | null;
+  difficulty: string | null;
+  target_muscles: string | null;
+  steps: TodayWorkoutStep[];
+  pose_detection_available: boolean;
+  empty_state: string | null;
+};
+
+export type TrainingPlanReconcileResponse = {
+  skipped_items: number;
+  ad_hoc_entries_created: number;
+  reconciled_date: string;
+};
+
 export function fetchWorkoutModes() {
   return apiRequest<WorkoutMode[]>("/catalog/workout-modes");
 }
 
 export function fetchExercises() {
   return apiRequest<Exercise[]>("/catalog/exercises");
+}
+
+export function fetchTodayTraining(date?: string) {
+  const params = date ? `?${new URLSearchParams({ date }).toString()}` : "";
+  return apiRequest<TodayWorkout>(`/today/training${params}`);
+}
+
+export function fetchWorkoutTemplates(filters: WorkoutTemplateFilters = {}) {
+  const params = new URLSearchParams();
+  if (filters.goal) {
+    params.set("goal", filters.goal);
+  }
+  if (filters.difficulty) {
+    params.set("difficulty", filters.difficulty);
+  }
+  if (filters.target) {
+    params.set("target", filters.target);
+  }
+  if (filters.max_duration) {
+    params.set("max_duration", String(filters.max_duration));
+  }
+  const query = params.toString();
+  return apiRequest<WorkoutTemplate[]>(`/workout-templates${query ? `?${query}` : ""}`);
+}
+
+export function fetchWorkoutTemplate(templateId: number) {
+  return apiRequest<WorkoutTemplate>(`/workout-templates/${templateId}`);
+}
+
+export function applyWorkoutTemplateToPlan(
+  templateId: number,
+  payload: WorkoutTemplateApplyPayload,
+) {
+  return apiRequest<TrainingPlanDetail>(
+    `/workout-templates/${templateId}/apply-to-plan`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export type WorkoutModePayload = Omit<WorkoutMode, "id">;
@@ -396,6 +626,10 @@ export function fetchAdminWorkoutModes() {
 
 export function fetchAdminExercises() {
   return apiRequest<Exercise[]>("/admin/exercises");
+}
+
+export function fetchAdminWorkoutTemplates() {
+  return apiRequest<WorkoutTemplate[]>("/admin/workout-templates");
 }
 
 export function createAdminWorkoutMode(payload: WorkoutModePayload) {
@@ -429,6 +663,23 @@ export function updateAdminExercise(exerciseId: number, payload: ExerciseUpdateP
   });
 }
 
+export function createAdminWorkoutTemplate(payload: WorkoutTemplatePayload) {
+  return apiRequest<WorkoutTemplate>("/admin/workout-templates", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminWorkoutTemplate(
+  templateId: number,
+  payload: WorkoutTemplateUpdatePayload,
+) {
+  return apiRequest<WorkoutTemplate>(`/admin/workout-templates/${templateId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchWorkoutSessions() {
   return apiRequest<WorkoutSession[]>("/workouts/sessions");
 }
@@ -438,6 +689,26 @@ export function createWorkoutSession(payload: WorkoutSessionPayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function startWorkoutSession(payload: WorkoutSessionStartPayload) {
+  return apiRequest<WorkoutSessionStartResponse>("/workouts/sessions/start", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function finishWorkoutSession(
+  sessionId: number,
+  payload: WorkoutSessionFinishPayload,
+) {
+  return apiRequest<WorkoutSessionStartResponse>(
+    `/workouts/sessions/${sessionId}/finish`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function fetchPoseDetectionResults() {
@@ -543,6 +814,13 @@ export function replaceTrainingPlanItems(
   return apiRequest<TrainingPlanDetail>(`/training-plans/${planId}/items`, {
     method: "PUT",
     body: JSON.stringify(payload),
+  });
+}
+
+export function reconcileTrainingPlans(today?: string) {
+  return apiRequest<TrainingPlanReconcileResponse>("/training-plans/reconcile", {
+    method: "POST",
+    body: JSON.stringify({ today: today || undefined }),
   });
 }
 

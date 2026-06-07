@@ -1,10 +1,10 @@
 import {
   Activity,
-  Bot,
   BookOpen,
   CalendarDays,
   Dumbbell,
   Home,
+  Layers3,
   LogOut,
   Moon,
   Settings,
@@ -28,7 +28,6 @@ const userNavItems = [
   { to: "/app/plans", label: "课表", icon: CalendarDays },
   { to: "/app/nutrition", label: "饮食", icon: Utensils },
   { to: "/app/leaderboard", label: "榜单", icon: Trophy },
-  { to: "/app/ai-settings", label: "AI", icon: Bot },
   { to: "/app/profile", label: "我的", icon: Settings },
 ];
 
@@ -36,6 +35,7 @@ const adminNavItems = [
   { to: "/admin", label: "总览", icon: Shield },
   { to: "/admin/workout-modes", label: "模式", icon: Activity },
   { to: "/admin/exercises", label: "动作", icon: BookOpen },
+  { to: "/admin/workout-templates", label: "模板", icon: Layers3 },
 ];
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -149,7 +149,7 @@ export default function Layout({ mode }: LayoutProps) {
         <div
           className={[
             "mx-auto grid max-w-md gap-2",
-            isAdmin ? "grid-cols-3" : "grid-cols-7",
+            isAdmin ? "grid-cols-4" : "grid-cols-6",
           ].join(" ")}
         >
           {items.map((item) => {
