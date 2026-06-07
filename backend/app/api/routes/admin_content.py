@@ -14,6 +14,11 @@ from app.schemas.content import (
     WorkoutModeResponse,
     WorkoutModeUpdate,
 )
+from app.schemas.workout_templates import (
+    WorkoutTemplateCreate,
+    WorkoutTemplateResponse,
+    WorkoutTemplateUpdate,
+)
 from app.services.content_service import (
     create_exercise,
     create_workout_mode,
@@ -21,6 +26,13 @@ from app.services.content_service import (
     list_workout_modes,
     update_exercise,
     update_workout_mode,
+)
+from app.services.workout_template_service import (
+    create_workout_template,
+    get_workout_template,
+    list_workout_templates,
+    serialize_template,
+    update_workout_template,
 )
 
 router = APIRouter()
@@ -110,3 +122,58 @@ def update_admin_exercise(
             detail="Exercise not found",
         )
     return exercise
+
+
+@router.get("/workout-templates", response_model=list[WorkoutTemplateResponse])
+def list_admin_workout_templates(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    templates = list_workout_templates(db, published_only=False)
+    return [serialize_template(db, template) for template in templates]
+
+
+@router.post(
+    "/workout-templates",
+    response_model=WorkoutTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_admin_workout_template(
+    payload: WorkoutTemplateCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        template = create_workout_template(db, payload)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = (
+            status.HTTP_409_CONFLICT
+            if "already exists" in message
+            else status.HTTP_404_NOT_FOUND
+        )
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    return serialize_template(db, template)
+
+
+@router.put("/workout-templates/{template_id}", response_model=WorkoutTemplateResponse)
+def update_admin_workout_template(
+    template_id: int,
+    payload: WorkoutTemplateUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        template = update_workout_template(db, template_id, payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    if template is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workout template not found",
+        )
+    return serialize_template(db, template)

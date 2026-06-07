@@ -5,6 +5,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.exercise import Exercise
+from app.models.workout_template import WorkoutTemplate
+from app.models.workout_template_step import WorkoutTemplateStep
 
 
 DEFAULT_EXERCISES: list[dict[str, Any]] = [
@@ -198,6 +200,249 @@ DEFAULT_EXERCISES: list[dict[str, Any]] = [
     },
 ]
 
+DEFAULT_WORKOUT_TEMPLATES: list[dict[str, Any]] = [
+    {
+        "slug": "lower-body-foundation",
+        "title": "入门下肢激活",
+        "description": "围绕深蹲和弓步的臀腿基础训练，适合建立下肢动作模式。",
+        "goal": "strength",
+        "difficulty": "beginner",
+        "target_muscles": "臀腿、核心",
+        "estimated_duration_minutes": 18,
+        "cover_url": None,
+        "tags": ["lower", "beginner", "bodyweight"],
+        "recommendation_weight": 90,
+        "is_published": True,
+        "steps": [
+            {
+                "exercise_slug": "bodyweight-squat",
+                "title": "徒手深蹲",
+                "sets": 3,
+                "reps": 12,
+                "duration_seconds": None,
+                "rest_seconds": 45,
+                "instruction": "下蹲时髋部向后坐，起身时收紧臀腿。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "reverse-lunge",
+                "title": "反向弓步蹲",
+                "sets": 3,
+                "reps": 10,
+                "duration_seconds": None,
+                "rest_seconds": 45,
+                "instruction": "每侧 10 次，保持前膝朝脚尖方向。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "plank",
+                "title": "平板支撑",
+                "sets": 2,
+                "reps": None,
+                "duration_seconds": 45,
+                "rest_seconds": 30,
+                "instruction": "肩、髋、踝保持一条直线。",
+                "allow_pose_detection": True,
+            },
+        ],
+    },
+    {
+        "slug": "core-stability",
+        "title": "核心稳定训练",
+        "description": "以平板支撑为主的短时核心耐力训练。",
+        "goal": "strength",
+        "difficulty": "beginner",
+        "target_muscles": "核心、肩部稳定肌群",
+        "estimated_duration_minutes": 12,
+        "cover_url": None,
+        "tags": ["core", "beginner"],
+        "recommendation_weight": 80,
+        "is_published": True,
+        "steps": [
+            {
+                "exercise_slug": "plank",
+                "title": "平板支撑",
+                "sets": 3,
+                "reps": None,
+                "duration_seconds": 45,
+                "rest_seconds": 30,
+                "instruction": "保持呼吸稳定，避免塌腰。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "bodyweight-squat",
+                "title": "徒手深蹲唤醒",
+                "sets": 2,
+                "reps": 10,
+                "duration_seconds": None,
+                "rest_seconds": 30,
+                "instruction": "动作放慢，感受核心参与。",
+                "allow_pose_detection": True,
+            },
+        ],
+    },
+    {
+        "slug": "upper-body-basics",
+        "title": "上肢力量入门",
+        "description": "俯卧撑结合核心稳定，建立上肢推力基础。",
+        "goal": "strength",
+        "difficulty": "intermediate",
+        "target_muscles": "胸肌、肱三头肌、核心",
+        "estimated_duration_minutes": 16,
+        "cover_url": None,
+        "tags": ["upper", "push"],
+        "recommendation_weight": 70,
+        "is_published": True,
+        "steps": [
+            {
+                "exercise_slug": "push-up",
+                "title": "俯卧撑",
+                "sets": 4,
+                "reps": 8,
+                "duration_seconds": None,
+                "rest_seconds": 60,
+                "instruction": "身体保持一条直线，控制下放。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "plank",
+                "title": "平板支撑",
+                "sets": 2,
+                "reps": None,
+                "duration_seconds": 40,
+                "rest_seconds": 40,
+                "instruction": "稳定肩部和核心。",
+                "allow_pose_detection": True,
+            },
+        ],
+    },
+    {
+        "slug": "full-body-fat-burn",
+        "title": "全身燃脂循环",
+        "description": "用自重动作组成的全身循环，提高心肺和训练热量消耗。",
+        "goal": "fat_loss",
+        "difficulty": "intermediate",
+        "target_muscles": "全身",
+        "estimated_duration_minutes": 24,
+        "cover_url": None,
+        "tags": ["fat_loss", "full_body"],
+        "recommendation_weight": 75,
+        "is_published": True,
+        "steps": [
+            {
+                "exercise_slug": "bodyweight-squat",
+                "title": "徒手深蹲",
+                "sets": 3,
+                "reps": 15,
+                "duration_seconds": None,
+                "rest_seconds": 30,
+                "instruction": "保持节奏，不牺牲动作质量。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "push-up",
+                "title": "俯卧撑",
+                "sets": 3,
+                "reps": 8,
+                "duration_seconds": None,
+                "rest_seconds": 45,
+                "instruction": "如有困难可降低次数。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "reverse-lunge",
+                "title": "反向弓步蹲",
+                "sets": 3,
+                "reps": 10,
+                "duration_seconds": None,
+                "rest_seconds": 45,
+                "instruction": "左右交替完成。",
+                "allow_pose_detection": True,
+            },
+        ],
+    },
+    {
+        "slug": "mobility-recovery",
+        "title": "拉伸恢复",
+        "description": "低强度恢复训练，用基础动作改善身体控制。",
+        "goal": "recovery",
+        "difficulty": "beginner",
+        "target_muscles": "全身、髋部、肩部",
+        "estimated_duration_minutes": 10,
+        "cover_url": None,
+        "tags": ["recovery", "mobility"],
+        "recommendation_weight": 60,
+        "is_published": True,
+        "steps": [
+            {
+                "exercise_slug": None,
+                "title": "动态热身",
+                "sets": None,
+                "reps": None,
+                "duration_seconds": 180,
+                "rest_seconds": 20,
+                "instruction": "活动肩颈、髋部和脚踝。",
+                "allow_pose_detection": False,
+            },
+            {
+                "exercise_slug": "plank",
+                "title": "短平板支撑",
+                "sets": 2,
+                "reps": None,
+                "duration_seconds": 30,
+                "rest_seconds": 30,
+                "instruction": "保持稳定，不追求极限。",
+                "allow_pose_detection": True,
+            },
+        ],
+    },
+    {
+        "slug": "no-equipment-quick",
+        "title": "零器械快速训练",
+        "description": "无需器械的短时训练，适合碎片时间完成。",
+        "goal": "general_fitness",
+        "difficulty": "beginner",
+        "target_muscles": "全身",
+        "estimated_duration_minutes": 14,
+        "cover_url": None,
+        "tags": ["quick", "bodyweight"],
+        "recommendation_weight": 85,
+        "is_published": True,
+        "steps": [
+            {
+                "exercise_slug": "bodyweight-squat",
+                "title": "徒手深蹲",
+                "sets": 2,
+                "reps": 15,
+                "duration_seconds": None,
+                "rest_seconds": 30,
+                "instruction": "保持呼吸，不要憋气。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "push-up",
+                "title": "俯卧撑",
+                "sets": 2,
+                "reps": 8,
+                "duration_seconds": None,
+                "rest_seconds": 40,
+                "instruction": "可以跪姿完成。",
+                "allow_pose_detection": True,
+            },
+            {
+                "exercise_slug": "plank",
+                "title": "平板支撑",
+                "sets": 2,
+                "reps": None,
+                "duration_seconds": 35,
+                "rest_seconds": 30,
+                "instruction": "保持身体线条稳定。",
+                "allow_pose_detection": True,
+            },
+        ],
+    },
+]
+
 
 def seed_default_training_content(db: Session) -> None:
     for item in DEFAULT_EXERCISES:
@@ -208,4 +453,52 @@ def seed_default_training_content(db: Session) -> None:
             continue
         for field, value in item.items():
             setattr(exercise, field, value)
+    db.flush()
+
+    exercises_by_slug = {
+        exercise.slug: exercise
+        for exercise in db.query(Exercise)
+        .filter(Exercise.slug.in_([item["slug"] for item in DEFAULT_EXERCISES]))
+        .all()
+    }
+    for item in DEFAULT_WORKOUT_TEMPLATES:
+        steps = item["steps"]
+        template_data = {key: value for key, value in item.items() if key != "steps"}
+        template = (
+            db.query(WorkoutTemplate)
+            .filter_by(slug=template_data["slug"])
+            .one_or_none()
+        )
+        if template is None:
+            template = WorkoutTemplate(**template_data)
+            db.add(template)
+            db.flush()
+        else:
+            for field, value in template_data.items():
+                setattr(template, field, value)
+            db.query(WorkoutTemplateStep).filter_by(
+                workout_template_id=template.id
+            ).delete()
+            db.flush()
+
+        for sort_order, step in enumerate(steps):
+            exercise_slug = step["exercise_slug"]
+            exercise = (
+                exercises_by_slug.get(exercise_slug) if exercise_slug is not None else None
+            )
+            db.add(
+                WorkoutTemplateStep(
+                    workout_template_id=template.id,
+                    sort_order=sort_order,
+                    exercise_id=exercise.id if exercise else None,
+                    workout_mode_id=None,
+                    title=step["title"],
+                    sets=step["sets"],
+                    reps=step["reps"],
+                    duration_seconds=step["duration_seconds"],
+                    rest_seconds=step["rest_seconds"],
+                    instruction=step["instruction"],
+                    allow_pose_detection=step["allow_pose_detection"],
+                )
+            )
     db.commit()

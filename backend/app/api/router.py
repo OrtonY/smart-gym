@@ -13,6 +13,7 @@ from app.api.routes import (
     pose,
     training_plans,
     users,
+    workout_templates,
     workouts,
 )
 
@@ -31,4 +32,7 @@ api_router.include_router(
     training_plans.router, prefix="/training-plans", tags=["training-plans"]
 )
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(
+    workout_templates.router, prefix="/workout-templates", tags=["workout-templates"]
+)
 api_router.include_router(workouts.router, prefix="/workouts", tags=["workouts"])
