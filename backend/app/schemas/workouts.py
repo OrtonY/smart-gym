@@ -69,6 +69,8 @@ class WorkoutSessionStart(BaseModel):
     source_plan_id: Optional[int] = Field(default=None, ge=1)
     source_plan_item_id: Optional[int] = Field(default=None, ge=1)
     source_template_id: Optional[int] = Field(default=None, ge=1)
+    workout_mode_id: Optional[int] = Field(default=None, ge=1)
+    exercise_id: Optional[int] = Field(default=None, ge=1)
     pose_detection_enabled: bool = False
 
     model_config = ConfigDict(extra="forbid")

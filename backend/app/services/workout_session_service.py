@@ -6,8 +6,10 @@ from typing import Optional
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.models.exercise import Exercise
 from app.models.training_plan import TrainingPlan
 from app.models.training_plan_item import TrainingPlanItem
+from app.models.workout_mode import WorkoutMode
 from app.models.workout_session import WorkoutSession
 from app.models.workout_session_step import WorkoutSessionStep
 from app.models.workout_template import WorkoutTemplate
@@ -107,6 +109,45 @@ def _snapshot_from_template_step(
     )
 
 
+def _validate_free_payload(
+    db: Session, payload: WorkoutSessionStart
+) -> tuple[Optional[Exercise], Optional[WorkoutMode]]:
+    if payload.exercise_id is None and payload.workout_mode_id is None:
+        return None, None
+
+    exercise: Optional[Exercise] = None
+    workout_mode: Optional[WorkoutMode] = None
+    if payload.exercise_id is not None:
+        exercise = db.get(Exercise, payload.exercise_id)
+        if exercise is None or not exercise.is_published:
+            raise ValueError("Exercise not found")
+    if payload.workout_mode_id is not None:
+        workout_mode = db.get(WorkoutMode, payload.workout_mode_id)
+        if workout_mode is None or not workout_mode.is_active:
+            raise ValueError("Workout mode not found")
+
+    return exercise, workout_mode
+
+
+def _snapshot_from_free_payload(
+    session_id: int,
+    payload: WorkoutSessionStart,
+    exercise: Optional[Exercise],
+    workout_mode: Optional[WorkoutMode],
+) -> Optional[WorkoutSessionStep]:
+    if exercise is None and workout_mode is None:
+        return None
+
+    return WorkoutSessionStep(
+        workout_session_id=session_id,
+        sort_order=0,
+        exercise_id=payload.exercise_id,
+        workout_mode_id=payload.workout_mode_id,
+        title=exercise.name if exercise is not None else workout_mode.name,
+        status="planned",
+    )
+
+
 def _first_snapshot_values(
     steps: list[WorkoutSessionStep],
 ) -> tuple[Optional[int], Optional[int]]:
@@ -121,6 +162,8 @@ def start_workout_session(
     source_plan_item: Optional[TrainingPlanItem] = None
     source_template: Optional[WorkoutTemplate] = None
     source_template_steps: list[WorkoutTemplateStep] = []
+    free_exercise: Optional[Exercise] = None
+    free_workout_mode: Optional[WorkoutMode] = None
 
     if payload.source_type == "plan":
         if payload.source_plan_id is None or payload.source_plan_item_id is None:
@@ -142,6 +185,8 @@ def start_workout_session(
         if source_template is None:
             return None
         source_template_steps = list_template_steps(db, source_template.id)
+    elif payload.source_type == "free":
+        free_exercise, free_workout_mode = _validate_free_payload(db, payload)
 
     session = WorkoutSession(
         user_id=user_id,
@@ -150,6 +195,10 @@ def start_workout_session(
         calories_burned=0,
         status="in_progress",
         source_type=payload.source_type,
+        workout_mode_id=(
+            payload.workout_mode_id if payload.source_type == "free" else None
+        ),
+        exercise_id=payload.exercise_id if payload.source_type == "free" else None,
         source_plan_id=payload.source_plan_id if payload.source_type == "plan" else None,
         source_plan_item_id=(
             payload.source_plan_item_id if payload.source_type == "plan" else None
@@ -170,10 +219,17 @@ def start_workout_session(
             _snapshot_from_template_step(session.id, step)
             for step in source_template_steps
         )
+    elif payload.source_type == "free":
+        free_step = _snapshot_from_free_payload(
+            session.id, payload, free_exercise, free_workout_mode
+        )
+        if free_step is not None:
+            steps.append(free_step)
 
-    workout_mode_id, exercise_id = _first_snapshot_values(steps)
-    session.workout_mode_id = workout_mode_id
-    session.exercise_id = exercise_id
+    if steps:
+        workout_mode_id, exercise_id = _first_snapshot_values(steps)
+        session.workout_mode_id = workout_mode_id
+        session.exercise_id = exercise_id
     session.total_steps_count = len(steps)
     db.add_all(steps)
     db.commit()

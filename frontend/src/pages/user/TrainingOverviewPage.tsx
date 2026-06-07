@@ -3,11 +3,14 @@ import { Camera, Dumbbell, Play, Timer } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
+  Exercise,
   TodayWorkout,
   TodayWorkoutStep,
   WorkoutSessionStartPayload,
   WorkoutTemplate,
   WorkoutTemplateStep,
+  applyWorkoutTemplateToPlan,
+  fetchExercise,
   fetchTodayTraining,
   fetchWorkoutTemplate,
   startWorkoutSession,
@@ -37,11 +40,12 @@ type OverviewSource =
   | {
       sourceType: "free";
       sourceId: null;
+      exerciseId: number | null;
       planItemId: null;
       title: string;
       description: string | null;
       durationMinutes: number | null;
-      steps: [];
+      steps: Array<TodayWorkoutStep | WorkoutTemplateStep>;
       poseAvailable: boolean;
     };
 
@@ -77,12 +81,41 @@ function fromToday(today: TodayWorkout, planItemId?: number | null): OverviewSou
   return {
     sourceType: "free",
     sourceId: null,
+    exerciseId: null,
     planItemId: null,
     title: "自由训练",
     description: null,
     durationMinutes: null,
     steps: [],
     poseAvailable: false,
+  };
+}
+
+function fromExercise(exercise: Exercise): OverviewSource {
+  return {
+    sourceType: "free",
+    sourceId: null,
+    exerciseId: exercise.id,
+    planItemId: null,
+    title: exercise.name,
+    description: exercise.description,
+    durationMinutes: null,
+    steps: [
+      {
+        id: null,
+        sort_order: 0,
+        exercise_id: exercise.id,
+        workout_mode_id: null,
+        title: exercise.name,
+        sets: null,
+        reps: null,
+        duration_seconds: null,
+        rest_seconds: null,
+        instruction: exercise.description,
+        allow_pose_detection: Boolean(exercise.detection_rules),
+      },
+    ],
+    poseAvailable: Boolean(exercise.detection_rules),
   };
 }
 
@@ -107,14 +140,16 @@ function stepDuration(step: TodayWorkoutStep | WorkoutTemplateStep) {
 }
 
 export default function TrainingOverviewPage() {
-  const { templateId } = useParams();
+  const { templateId, exerciseId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [source, setSource] = useState<OverviewSource | null>(null);
   const [poseEnabled, setPoseEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,6 +163,18 @@ export default function TrainingOverviewPage() {
           const template = await fetchWorkoutTemplate(effectiveTemplateId);
           if (isMounted) {
             setSource(fromTemplate(template));
+          }
+          return;
+        }
+        const queryExerciseId = numberParam(searchParams.get("exerciseId"));
+        const effectiveExerciseId = exerciseId ? Number(exerciseId) : queryExerciseId;
+        if (effectiveExerciseId) {
+          const exercise = await fetchExercise(effectiveExerciseId);
+          if (!exercise) {
+            throw new Error("动作不存在");
+          }
+          if (isMounted) {
+            setSource(fromExercise(exercise));
           }
           return;
         }
@@ -153,7 +200,7 @@ export default function TrainingOverviewPage() {
     return () => {
       isMounted = false;
     };
-  }, [searchParams, templateId]);
+  }, [exerciseId, searchParams, templateId]);
 
   const meta = useMemo(() => {
     if (!source) {
@@ -184,13 +231,19 @@ export default function TrainingOverviewPage() {
     if (source.sourceType === "template") {
       payload.source_template_id = source.sourceId;
     }
+    if (source.sourceType === "free" && source.exerciseId) {
+      payload.exercise_id = source.exerciseId;
+    }
     setIsStarting(true);
     setError(null);
     try {
       const session = await startWorkoutSession(payload);
       sessionStorage.setItem(
         `smart-gym-active-session:${session.id}`,
-        JSON.stringify(session),
+        JSON.stringify({
+          ...session,
+          client_started_at: new Date().toISOString(),
+        }),
       );
       navigate(`/app/train/session/${session.id}`);
     } catch (caught) {
@@ -200,13 +253,34 @@ export default function TrainingOverviewPage() {
     }
   }
 
+  async function handleApplyTemplate() {
+    if (!source || source.sourceType !== "template") {
+      return;
+    }
+    const offsetDate = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000);
+    setIsApplying(true);
+    setError(null);
+    setStatus(null);
+    try {
+      await applyWorkoutTemplateToPlan(source.sourceId, {
+        scheduled_date: offsetDate.toISOString().slice(0, 10),
+        plan_title: "我的训练计划",
+      });
+      setStatus("模板已加入今日课表");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "加入课表失败");
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-slate-950">训练确认</h2>
           <p className="mt-1 text-sm text-slate-600">
-            每次开始训练前选择是否开启姿态检测。
+            查看训练项后选择是否开启姿态检测。
           </p>
         </div>
         <Link
@@ -218,6 +292,7 @@ export default function TrainingOverviewPage() {
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {status ? <p className="text-sm text-gym-teal">{status}</p> : null}
 
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
         {isLoading ? (
@@ -295,21 +370,34 @@ export default function TrainingOverviewPage() {
               ) : null}
             </div>
 
-            <button
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-              disabled={isStarting}
-              type="button"
-              onClick={handleStart}
-            >
-              {isStarting ? (
-                "启动中"
-              ) : (
-                <>
-                  <Play aria-hidden="true" size={17} />
-                  开始训练
-                </>
-              )}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                disabled={isStarting}
+                type="button"
+                onClick={handleStart}
+              >
+                {isStarting ? (
+                  "启动中"
+                ) : (
+                  <>
+                    <Play aria-hidden="true" size={17} />
+                    开始训练
+                  </>
+                )}
+              </button>
+              {source.sourceType === "template" ? (
+                <button
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  disabled={isApplying}
+                  type="button"
+                  onClick={handleApplyTemplate}
+                >
+                  <Timer aria-hidden="true" size={17} />
+                  {isApplying ? "加入中" : "加入课表"}
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : (
           <div className="text-sm text-slate-600">没有可开始的训练。</div>

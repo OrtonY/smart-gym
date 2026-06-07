@@ -241,6 +241,8 @@ export type WorkoutSessionStartPayload = {
   source_plan_id?: number | null;
   source_plan_item_id?: number | null;
   source_template_id?: number | null;
+  workout_mode_id?: number | null;
+  exercise_id?: number | null;
   pose_detection_enabled: boolean;
 };
 
@@ -573,6 +575,11 @@ export function fetchWorkoutModes() {
 
 export function fetchExercises() {
   return apiRequest<Exercise[]>("/catalog/exercises");
+}
+
+export async function fetchExercise(exerciseId: number) {
+  const exercises = await fetchExercises();
+  return exercises.find((exercise) => exercise.id === exerciseId) ?? null;
 }
 
 export function fetchTodayTraining(date?: string) {

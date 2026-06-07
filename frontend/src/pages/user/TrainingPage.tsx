@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { CalendarPlus, Dumbbell, History, Plus, SlidersHorizontal } from "lucide-react";
+import { Activity, Dumbbell, History, LayoutList, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import {
@@ -8,8 +8,6 @@ import {
   WorkoutSession,
   WorkoutSummary,
   WorkoutTemplate,
-  WorkoutTemplateFilters,
-  applyWorkoutTemplateToPlan,
   createWorkoutSession,
   fetchExercises,
   fetchWorkoutModes,
@@ -36,10 +34,6 @@ const emptySummary: WorkoutSummary = {
 function toDateTimeLocal(date: Date) {
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return offsetDate.toISOString().slice(0, 16);
-}
-
-function todayKey() {
-  return toDateTimeLocal(new Date()).slice(0, 10);
 }
 
 function createEmptyForm(): FormState {
@@ -75,10 +69,10 @@ function difficultyText(value: WorkoutTemplate["difficulty"]) {
   return map[value];
 }
 
-async function fetchTrainingData(filters: WorkoutTemplateFilters) {
+async function fetchTrainingData() {
   const [nextTemplates, nextModes, nextExercises, nextSessions, nextSummary] =
     await Promise.all([
-      fetchWorkoutTemplates(filters),
+      fetchWorkoutTemplates(),
       fetchWorkoutModes(),
       fetchExercises(),
       fetchWorkoutSessions(),
@@ -93,7 +87,9 @@ export default function TrainingPage() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [summary, setSummary] = useState<WorkoutSummary>(emptySummary);
-  const [filters, setFilters] = useState<WorkoutTemplateFilters>({});
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "templates" | "exercises" | "history"
+  >("overview");
   const [form, setForm] = useState<FormState>(() => createEmptyForm());
   const [manualOpen, setManualOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -120,11 +116,11 @@ export default function TrainingPage() {
     [sessions],
   );
 
-  async function loadData(nextFilters = filters) {
+  async function loadData() {
     setIsLoading(true);
     try {
       const { nextTemplates, nextModes, nextExercises, nextSessions, nextSummary } =
-        await fetchTrainingData(nextFilters);
+        await fetchTrainingData();
       setTemplates(nextTemplates);
       setModes(nextModes);
       setExercises(nextExercises);
@@ -141,28 +137,6 @@ export default function TrainingPage() {
   useEffect(() => {
     void loadData();
   }, []);
-
-  async function applyFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await loadData(filters);
-  }
-
-  async function handleApplyTemplate(templateId: number) {
-    setIsSaving(true);
-    setError(null);
-    setStatus(null);
-    try {
-      await applyWorkoutTemplateToPlan(templateId, {
-        scheduled_date: todayKey(),
-        plan_title: "我的训练计划",
-      });
-      setStatus("模板已加入今日课表");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "加入课表失败");
-    } finally {
-      setIsSaving(false);
-    }
-  }
 
   async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -222,6 +196,146 @@ export default function TrainingPage() {
           </span>
         </div>
       </article>
+    );
+  }
+
+  const tabs = [
+    { id: "overview" as const, label: "训练数据", icon: Activity },
+    { id: "templates" as const, label: "模板库", icon: LayoutList },
+    { id: "exercises" as const, label: "动作", icon: Dumbbell },
+    { id: "history" as const, label: "最近训练", icon: History },
+  ];
+
+  function renderOverviewTab() {
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+            <p className="text-2xl font-semibold text-slate-950">
+              {summary.sessions_count}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">训练次数</p>
+          </article>
+          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+            <p className="text-2xl font-semibold text-slate-950">
+              {summary.total_duration_minutes}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">累计分钟</p>
+          </article>
+          <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+            <p className="text-2xl font-semibold text-slate-950">
+              {summary.total_calories_burned}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">累计千卡</p>
+          </article>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-slate-950">本次入口</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                从模板或动作开始训练，也可以补记已完成训练。
+              </p>
+            </div>
+            <button
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              type="button"
+              onClick={() => setManualOpen((current) => !current)}
+            >
+              <Plus aria-hidden="true" size={17} />
+              补记
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderTemplatesTab() {
+    return (
+      <div className="grid gap-3 lg:grid-cols-2">
+        {templates.map((template) => (
+          <Link
+            key={template.id}
+            className="block rounded-lg border border-slate-200 bg-white p-4 shadow-soft transition hover:border-gym-teal"
+            to={`/app/train/templates/${template.id}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-slate-950">
+                  {template.title}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {difficultyText(template.difficulty)} ·{" "}
+                  {template.estimated_duration_minutes} 分钟 · {template.target_muscles}
+                </p>
+                {template.description ? (
+                  <p className="mt-2 text-sm text-slate-600">{template.description}</p>
+                ) : null}
+              </div>
+              <Dumbbell aria-hidden="true" className="shrink-0 text-gym-teal" size={20} />
+            </div>
+            <span className="mt-4 inline-flex items-center justify-center rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white">
+              查看训练项
+            </span>
+          </Link>
+        ))}
+        {!isLoading && templates.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+            暂无模板。
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderExercisesTab() {
+    return (
+      <div className="grid gap-3 lg:grid-cols-2">
+        {exercises.map((exercise) => (
+          <Link
+            key={exercise.id}
+            className="block rounded-lg border border-slate-200 bg-white p-4 shadow-soft transition hover:border-gym-teal"
+            to={`/app/train/exercises/${exercise.id}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-slate-950">
+                  {exercise.name}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {exercise.target_muscle} · {difficultyText(exercise.difficulty)}
+                </p>
+                {exercise.description ? (
+                  <p className="mt-2 text-sm text-slate-600">{exercise.description}</p>
+                ) : null}
+              </div>
+              <Dumbbell aria-hidden="true" className="shrink-0 text-gym-teal" size={20} />
+            </div>
+            <span className="mt-4 inline-flex items-center justify-center rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white">
+              开始训练
+            </span>
+          </Link>
+        ))}
+        {!isLoading && exercises.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+            暂无动作。
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderHistoryTab() {
+    return (
+      <div className="space-y-3">
+        {latestSessions.map(renderSession)}
+        {!isLoading && latestSessions.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+            还没有训练记录。
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -339,178 +453,43 @@ export default function TrainingPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-slate-950">训练</h2>
-          <p className="mt-1 text-sm text-slate-600">从模板开始训练，或补记一次训练。</p>
+          <p className="mt-1 text-sm text-slate-600">
+            训练数据、模板、动作和历史记录集中在这里。
+          </p>
         </div>
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          type="button"
-          onClick={() => setManualOpen((current) => !current)}
-        >
-          <Plus aria-hidden="true" size={17} />
-          补记
-        </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-          <p className="text-2xl font-semibold text-slate-950">
-            {summary.sessions_count}
-          </p>
-          <p className="mt-1 text-sm text-slate-600">训练次数</p>
-        </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-          <p className="text-2xl font-semibold text-slate-950">
-            {summary.total_duration_minutes}
-          </p>
-          <p className="mt-1 text-sm text-slate-600">累计分钟</p>
-        </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-          <p className="text-2xl font-semibold text-slate-950">
-            {summary.total_calories_burned}
-          </p>
-          <p className="mt-1 text-sm text-slate-600">累计千卡</p>
-        </article>
+      <div className="flex gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-soft">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              className={[
+                "inline-flex min-w-fit flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition",
+                isActive
+                  ? "bg-gym-teal text-white"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+              ].join(" ")}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <Icon aria-hidden="true" size={17} />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {status ? <p className="text-sm text-gym-teal">{status}</p> : null}
       {manualOpen ? renderManualForm() : null}
 
-      <form
-        className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
-        onSubmit={applyFilters}
-      >
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal aria-hidden="true" className="text-gym-teal" size={18} />
-          <h3 className="text-base font-semibold text-slate-950">模板库</h3>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <label className="block text-sm font-medium text-slate-700">
-            目标
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              value={filters.goal ?? ""}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, goal: event.target.value || undefined }))
-              }
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-700">
-            难度
-            <select
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              value={filters.difficulty ?? ""}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  difficulty: event.target.value
-                    ? (event.target.value as WorkoutTemplate["difficulty"])
-                    : undefined,
-                }))
-              }
-            >
-              <option value="">全部</option>
-              <option value="beginner">入门</option>
-              <option value="intermediate">进阶</option>
-              <option value="advanced">高级</option>
-            </select>
-          </label>
-          <label className="block text-sm font-medium text-slate-700">
-            肌群
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              value={filters.target ?? ""}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  target: event.target.value || undefined,
-                }))
-              }
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-700">
-            最长分钟
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              min="1"
-              type="number"
-              value={filters.max_duration ?? ""}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  max_duration: event.target.value ? Number(event.target.value) : undefined,
-                }))
-              }
-            />
-          </label>
-        </div>
-        <button
-          className="mt-4 inline-flex items-center justify-center rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800"
-          type="submit"
-        >
-          筛选
-        </button>
-      </form>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        {templates.map((template) => (
-          <article
-            key={template.id}
-            className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-base font-semibold text-slate-950">
-                  {template.title}
-                </p>
-                <p className="mt-1 text-sm text-slate-600">
-                  {difficultyText(template.difficulty)} ·{" "}
-                  {template.estimated_duration_minutes} 分钟 · {template.target_muscles}
-                </p>
-                {template.description ? (
-                  <p className="mt-2 text-sm text-slate-600">{template.description}</p>
-                ) : null}
-              </div>
-              <Dumbbell aria-hidden="true" className="shrink-0 text-gym-teal" size={20} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link
-                className="inline-flex items-center justify-center rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800"
-                to={`/app/train/templates/${template.id}`}
-              >
-                开始
-              </Link>
-              <button
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isSaving}
-                type="button"
-                onClick={() => handleApplyTemplate(template.id)}
-              >
-                <CalendarPlus aria-hidden="true" size={17} />
-                加入今日课表
-              </button>
-            </div>
-          </article>
-        ))}
-        {!isLoading && templates.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
-            没有符合条件的模板。
-          </div>
-        ) : null}
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <History aria-hidden="true" className="text-gym-teal" size={18} />
-          <h3 className="text-lg font-semibold text-slate-950">最近训练</h3>
-        </div>
-        {latestSessions.map(renderSession)}
-        {!isLoading && latestSessions.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
-            还没有训练记录。
-          </div>
-        ) : null}
-      </div>
+      {activeTab === "overview" ? renderOverviewTab() : null}
+      {activeTab === "templates" ? renderTemplatesTab() : null}
+      {activeTab === "exercises" ? renderExercisesTab() : null}
+      {activeTab === "history" ? renderHistoryTab() : null}
     </section>
   );
 }

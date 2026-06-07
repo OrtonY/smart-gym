@@ -20,6 +20,7 @@ export default function UserRoutes() {
         <Route index element={<HomePage />} />
         <Route path="train" element={<TrainingPage />} />
         <Route path="train/templates/:templateId" element={<TrainingOverviewPage />} />
+        <Route path="train/exercises/:exerciseId" element={<TrainingOverviewPage />} />
         <Route path="train/overview" element={<TrainingOverviewPage />} />
         <Route path="train/session/:sessionId" element={<GuidedWorkoutPage />} />
         <Route

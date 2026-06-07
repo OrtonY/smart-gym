@@ -31,9 +31,19 @@ type PoseDetectionPanelProps = {
   exercise?: Exercise | null;
   workoutMode?: WorkoutMode | null;
   enabled?: boolean;
+  isResting?: boolean;
+  restRemainingSeconds?: number;
+  repsOffset?: number;
   title: string;
   onSnapshotChange?: (state: PoseDetectionSnapshotState) => void;
 };
+
+function formatCountdown(totalSeconds: number) {
+  const seconds = Math.max(0, Math.ceil(totalSeconds));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
 
 function cameraEnvironmentDiagnostics() {
   return {
@@ -98,6 +108,9 @@ export default function PoseDetectionPanel({
   exercise,
   workoutMode,
   enabled = true,
+  isResting = false,
+  restRemainingSeconds = 0,
+  repsOffset = 0,
   title,
   onSnapshotChange,
 }: PoseDetectionPanelProps) {
@@ -112,6 +125,7 @@ export default function PoseDetectionPanel({
   const [snapshots, setSnapshots] = useState<PoseFrameSummary[]>([]);
   const [landmarkSamples, setLandmarkSamples] = useState<PoseLandmark[][]>([]);
   const [error, setError] = useState<string | null>(null);
+  const displayedReps = Math.max(0, (snapshot?.reps ?? 0) - repsOffset);
 
   function stopCamera(updateState = true) {
     const activeStream = streamRef.current;
@@ -283,6 +297,14 @@ export default function PoseDetectionPanel({
               {enabled ? "摄像头未启动" : "姿态检测未开启"}
             </div>
           ) : null}
+          {isResting ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/75 text-white">
+              <p className="text-base font-semibold">休息中</p>
+              <p className="mt-2 text-5xl font-semibold tabular-nums">
+                {formatCountdown(restRemainingSeconds)}
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -292,7 +314,7 @@ export default function PoseDetectionPanel({
           <div className="mt-4 grid grid-cols-3 gap-2 text-center">
             <div>
               <p className="text-2xl font-semibold text-slate-950">
-                {snapshot?.reps ?? 0}
+                {displayedReps}
               </p>
               <p className="mt-1 text-xs text-slate-500">次数</p>
             </div>
@@ -310,7 +332,9 @@ export default function PoseDetectionPanel({
             </div>
           </div>
           <p className="mt-4 text-sm text-slate-600">
-            {snapshot?.feedback ?? "开始后保持全身进入画面。"}
+            {isResting
+              ? "休息中，倒计时结束后继续训练。"
+              : snapshot?.feedback ?? "开始后保持全身进入画面。"}
           </p>
         </article>
 
