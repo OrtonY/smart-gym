@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Dumbbell, ListChecks, Plus, Timer } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Camera, Dumbbell, ListChecks, Plus, Timer } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   Exercise,
@@ -60,6 +60,25 @@ function createEmptyForm(): FormState {
 
 function parseOptionalId(value: string) {
   return value === "" ? null : Number(value);
+}
+
+function poseUrl(params: {
+  exerciseId?: number | null;
+  workoutModeId?: number | null;
+  title?: string | null;
+}) {
+  const search = new URLSearchParams();
+  if (params.exerciseId) {
+    search.set("exerciseId", String(params.exerciseId));
+  }
+  if (params.workoutModeId) {
+    search.set("workoutModeId", String(params.workoutModeId));
+  }
+  if (params.title) {
+    search.set("title", params.title);
+  }
+  const query = search.toString();
+  return query ? `/app/pose?${query}` : "/app/pose";
 }
 
 async function fetchTrainingData() {
@@ -324,6 +343,20 @@ export default function TrainingPage() {
         </div>
         {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
         {status ? <p className="mt-4 text-sm text-gym-teal">{status}</p> : null}
+        <Link
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint"
+          to={poseUrl({
+            exerciseId: parseOptionalId(form.exercise_id),
+            workoutModeId: parseOptionalId(form.workout_mode_id),
+            title:
+              exerciseNames.get(Number(form.exercise_id)) ??
+              modeNames.get(Number(form.workout_mode_id)) ??
+              "自由训练",
+          })}
+        >
+          <Camera aria-hidden="true" size={17} />
+          动作检测
+        </Link>
         <button
           className="mt-5 w-full rounded-md bg-gym-teal px-4 py-2 font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isLoading || isSaving}
@@ -378,6 +411,36 @@ export default function TrainingPage() {
           </p>
           <p className="mt-1 text-sm text-slate-600">累计千卡</p>
         </article>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-slate-950">动作检测</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              从任意训练进入摄像头检测，保存后会生成训练记录。
+            </p>
+          </div>
+          <Link
+            aria-label="开始动作检测"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-gym-teal text-white transition hover:bg-teal-800"
+            title="开始动作检测"
+            to="/app/pose"
+          >
+            <Camera aria-hidden="true" size={18} />
+          </Link>
+        </div>
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {exercises.slice(0, 8).map((exercise) => (
+            <Link
+              key={exercise.id}
+              className="shrink-0 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-gym-teal hover:text-gym-teal"
+              to={poseUrl({ exerciseId: exercise.id, title: exercise.name })}
+            >
+              {exercise.name}
+            </Link>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-white p-1 shadow-soft">

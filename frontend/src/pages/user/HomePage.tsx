@@ -1,4 +1,4 @@
-import { Dumbbell, Sparkles, Timer } from "lucide-react";
+import { Camera, Dumbbell, Sparkles, Timer } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
@@ -7,6 +7,7 @@ export default function HomePage() {
   const { currentUser } = useAuth();
   const cards = [
     { title: "今日计划", label: "查看训练安排", to: "/app/train", icon: Timer },
+    { title: "动作检测", label: "打开摄像头检测", to: "/app/pose", icon: Camera },
     { title: "AI 教练", label: "生成训练建议", to: "/app/ai-settings", icon: Sparkles },
     { title: "快速训练", label: "进入运动模式", to: "/app/train?tab=new", icon: Dumbbell },
   ];
@@ -21,7 +22,7 @@ export default function HomePage() {
           训练入口、AI 教练和个人设置集中在一个移动端工作台。
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => {
           const Icon = card.icon;
           return (

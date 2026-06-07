@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Bot,
   CalendarDays,
+  Camera,
   ChevronLeft,
   ChevronRight,
   Edit3,
@@ -11,6 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import {
   TrainingPlanDetail,
@@ -26,6 +28,8 @@ import {
 type ItemForm = {
   scheduled_date: string | null;
   day_of_week: string;
+  exercise_id: number | null;
+  workout_mode_id: number | null;
   title: string;
   sets: string;
   reps: string;
@@ -84,6 +88,8 @@ function createDefaultItem(dateKey: string): ItemForm {
   return {
     scheduled_date: dateKey,
     day_of_week: String(mondayWeekday(fromDateKey(dateKey))),
+    exercise_id: null,
+    workout_mode_id: null,
     title: "训练安排",
     sets: "",
     reps: "",
@@ -96,6 +102,8 @@ function toFormItem(item: TrainingPlanItemPayload | TrainingPlanDetail["items"][
   return {
     scheduled_date: item.scheduled_date,
     day_of_week: String(item.day_of_week),
+    exercise_id: item.exercise_id,
+    workout_mode_id: item.workout_mode_id,
     title: item.title,
     sets: item.sets ? String(item.sets) : "",
     reps: item.reps ? String(item.reps) : "",
@@ -109,8 +117,8 @@ function toPayload(item: ItemForm, sortOrder: number): TrainingPlanItemPayload {
     scheduled_date: item.scheduled_date,
     day_of_week: Number(item.day_of_week),
     sort_order: sortOrder,
-    exercise_id: null,
-    workout_mode_id: null,
+    exercise_id: item.exercise_id,
+    workout_mode_id: item.workout_mode_id,
     title: item.title.trim(),
     sets: item.sets ? Number(item.sets) : null,
     reps: item.reps ? Number(item.reps) : null,
@@ -125,6 +133,18 @@ function metaText(item: ItemForm) {
     item.reps ? `${item.reps} 次` : null,
     item.duration_minutes ? `${item.duration_minutes} 分钟` : null,
   ].filter(Boolean);
+}
+
+function poseUrl(item: ItemForm) {
+  const search = new URLSearchParams();
+  if (item.exercise_id) {
+    search.set("exerciseId", String(item.exercise_id));
+  }
+  if (item.workout_mode_id) {
+    search.set("workoutModeId", String(item.workout_mode_id));
+  }
+  search.set("title", item.title);
+  return `/app/pose?${search.toString()}`;
 }
 
 function monthCells(monthCursor: Date) {
@@ -575,6 +595,13 @@ export default function TrainingPlansPage() {
                         {item.notes}
                       </p>
                     ) : null}
+                    <Link
+                      className="mt-3 inline-flex items-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint"
+                      to={poseUrl(item)}
+                    >
+                      <Camera aria-hidden="true" size={17} />
+                      动作检测
+                    </Link>
                   </article>
                 ))}
                 {selectedDisplayItems.length === 0 ? (
