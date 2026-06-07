@@ -10,9 +10,12 @@ from app.schemas.training_plans import (
     TrainingPlanCreate,
     TrainingPlanDetailResponse,
     TrainingPlanItemsReplace,
+    TrainingPlanReconcileRequest,
+    TrainingPlanReconcileResponse,
     TrainingPlanSummaryResponse,
     TrainingPlanVersionResponse,
 )
+from app.services.training_reconciliation_service import reconcile_training_plan_calendar
 from app.services.training_plan_service import (
     create_training_plan,
     get_training_plan_detail,
@@ -57,6 +60,15 @@ def create_my_training_plan(
             detail="Training plan not found",
         )
     return detail
+
+
+@router.post("/reconcile", response_model=TrainingPlanReconcileResponse)
+def reconcile_my_training_plan_calendar(
+    payload: TrainingPlanReconcileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TrainingPlanReconcileResponse:
+    return reconcile_training_plan_calendar(db, current_user.id, today=payload.today)
 
 
 @router.get("/{plan_id}", response_model=TrainingPlanDetailResponse)

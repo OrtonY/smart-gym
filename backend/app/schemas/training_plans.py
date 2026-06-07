@@ -95,3 +95,15 @@ class TrainingPlanSummaryResponse(BaseModel):
 class TrainingPlanDetailResponse(TrainingPlanSummaryResponse):
     items: list[TrainingPlanItemResponse]
     versions: list[TrainingPlanVersionResponse]
+
+
+class TrainingPlanReconcileRequest(BaseModel):
+    today: Optional[date] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TrainingPlanReconcileResponse(BaseModel):
+    skipped_items: int
+    ad_hoc_entries_created: int
+    reconciled_date: date
