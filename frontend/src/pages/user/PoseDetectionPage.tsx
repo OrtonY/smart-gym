@@ -18,6 +18,7 @@ import {
   type PoseFrameSummary,
   type PoseLandmark,
 } from "../../pose/poseMetrics";
+import { getBrowserCameraSupportError } from "../../pose/cameraSupport";
 
 function numericParam(value: string | null) {
   if (!value) {
@@ -137,6 +138,11 @@ export default function PoseDetectionPage() {
     startedAtRef.current = new Date();
 
     try {
+      const cameraSupportError = getBrowserCameraSupportError();
+      if (cameraSupportError) {
+        throw new Error(cameraSupportError);
+      }
+
       const video = videoRef.current;
       if (!video) {
         throw new Error("视频组件未就绪");
