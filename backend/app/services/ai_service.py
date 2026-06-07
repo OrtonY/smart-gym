@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 from app.models.ai_conversation import AiConversation
 from app.models.ai_message import AiMessage
 from app.models.ai_provider_config import AiProviderConfig
+from app.models.exercise import Exercise
+from app.models.pose_detection_result import PoseDetectionResult
 from app.models.training_plan import TrainingPlan
 from app.schemas.ai_coach import AdjustTrainingPlanRequest, GenerateTrainingPlanRequest
 from app.schemas.training_plans import (
@@ -42,6 +44,12 @@ AI_PLAN_SYSTEM_PROMPT = (
     "reps, duration_minutes, notes, exercise_id null, workout_mode_id null. "
     "Do not calculate weekdays. day_of_week is optional; the backend will calculate "
     "it from scheduled_date."
+)
+
+POSE_ADVICE_SYSTEM_PROMPT = (
+    "You are a fitness movement coach. Return concise Chinese advice only. "
+    "Use 3 short sentences at most. Focus on movement safety, one correction, "
+    "and one next-set cue. Do not mention private data or provider metadata."
 )
 
 
@@ -452,6 +460,96 @@ def _latest_plan_conversation(
         .scalars()
         .first()
     )
+
+
+def _fake_pose_advice(result: PoseDetectionResult) -> str:
+    score_text = f"{result.score:.1f}" if result.score is not None else "未评分"
+    return (
+        f"动作建议：本次完成 {result.reps_counted} 次，评分 {score_text}。"
+        "保持膝盖朝脚尖方向，起身时收紧核心。下一组放慢下放速度。"
+    )
+
+
+def _pose_advice_user_prompt(
+    result: PoseDetectionResult, exercise: Optional[Exercise]
+) -> str:
+    exercise_name = exercise.name if exercise is not None else "未指定动作"
+    return json.dumps(
+        {
+            "exercise_name": exercise_name,
+            "duration_seconds": result.duration_seconds,
+            "reps_counted": result.reps_counted,
+            "score": result.score,
+            "feedback_summary": result.feedback_summary,
+            "metrics": result.metrics_json,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+
+def _call_text_openai_compatible(
+    config: AiProviderConfig, messages: list[dict[str, str]]
+) -> str:
+    base_url = (config.base_url or "https://api.openai.com/v1").rstrip("/")
+    api_key = decrypt_api_key(config.api_key_encrypted)
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=30.0,
+        max_retries=0,
+    )
+    try:
+        response = client.chat.completions.create(
+            model=config.model_name,
+            messages=messages,
+            temperature=0.3,
+        )
+        content = response.choices[0].message.content
+    except OpenAIAPIError as exc:
+        raise AiCoachError("AI provider request failed") from exc
+    except (AttributeError, IndexError, TypeError, ValueError) as exc:
+        raise AiCoachError("AI provider returned invalid response") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise AiCoachError("AI provider returned invalid response")
+    return content.strip()
+
+
+def _call_text_ollama(
+    config: AiProviderConfig, messages: list[dict[str, str]]
+) -> str:
+    base_url = (config.base_url or "http://127.0.0.1:11434").rstrip("/")
+    client = OllamaClient(host=base_url, timeout=60.0)
+    try:
+        response = client.chat(model=config.model_name, messages=messages)
+        content = response.message.content
+    except (OllamaResponseError, ConnectionError, OSError) as exc:
+        raise AiCoachError("AI provider request failed") from exc
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise AiCoachError("AI provider returned invalid response") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise AiCoachError("AI provider returned invalid response")
+    return content.strip()
+
+
+def generate_pose_detection_advice(
+    config: AiProviderConfig,
+    result: PoseDetectionResult,
+    exercise: Optional[Exercise],
+) -> str:
+    if os.getenv("SMART_GYM_AI_FAKE_RESPONSES") == "true":
+        return _fake_pose_advice(result)
+
+    messages = [
+        {"role": "system", "content": POSE_ADVICE_SYSTEM_PROMPT},
+        {"role": "user", "content": _pose_advice_user_prompt(result, exercise)},
+    ]
+    if config.provider_type in {"openai", "openai-compatible", "openai_compatible"}:
+        return _call_text_openai_compatible(config, messages)
+    if config.provider_type == "ollama":
+        return _call_text_ollama(config, messages)
+
+    raise AiCoachError("Unsupported AI provider")
 
 
 def generate_ai_training_plan(

@@ -11,10 +11,17 @@ from app.schemas.pose import (
     PoseDetectionResultCreate,
     PoseDetectionResultResponse,
 )
+from app.services.ai_service import (
+    AiCoachError,
+    generate_pose_detection_advice,
+    get_active_ai_provider_config,
+)
 from app.services.pose_service import (
     create_pose_detection_result,
     get_pose_detection_result,
+    get_pose_result_exercise,
     list_pose_detection_results,
+    save_pose_advice,
 )
 
 router = APIRouter()
@@ -74,7 +81,23 @@ def generate_my_pose_advice(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Pose detection result not found",
         )
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Pose AI advice not implemented",
-    )
+    config = get_active_ai_provider_config(db, current_user.id)
+    if config is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI provider config not found",
+        )
+
+    try:
+        advice = generate_pose_detection_advice(
+            config,
+            result,
+            get_pose_result_exercise(db, result),
+        )
+    except AiCoachError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return {"result": save_pose_advice(db, result, config, advice)}

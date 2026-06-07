@@ -1,9 +1,11 @@
 from datetime import datetime
 from typing import Optional
 
+from app.models.ai_provider_config import AiProviderConfig
 from app.models.exercise import Exercise
 from app.models.pose_detection_result import PoseDetectionResult
 from app.models.workout_session import WorkoutSession
+from app.services.ai_config_service import encrypt_api_key
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -23,6 +25,17 @@ def _published_exercise(db_session) -> Exercise:
     db_session.commit()
     db_session.refresh(exercise)
     return exercise
+
+
+def _provider(user_id: int, is_active: bool = True) -> AiProviderConfig:
+    return AiProviderConfig(
+        user_id=user_id,
+        provider_type="openai-compatible",
+        base_url="https://example.test/v1",
+        model_name="test-model",
+        api_key_encrypted=encrypt_api_key("test-key"),
+        is_active=is_active,
+    )
 
 
 def _pose_payload(
@@ -151,3 +164,66 @@ def test_create_pose_result_rejects_unpublished_exercise(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Exercise not found"
+
+
+def test_pose_ai_advice_requires_current_user_provider_config(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    other_user, _ = create_user_and_token("pose-ai-other@example.com")
+    user, token = create_user_and_token("pose-ai-current@example.com")
+    db_session.add(_provider(other_user.id))
+    db_session.add(
+        PoseDetectionResult(
+            user_id=user.id,
+            started_at=datetime(2026, 6, 7, 8, 0, 0),
+            duration_seconds=90,
+            reps_counted=8,
+            score=80,
+            feedback_summary="深蹲幅度不足",
+            metrics_json={"source": "test"},
+        )
+    )
+    db_session.commit()
+    result = db_session.query(PoseDetectionResult).filter_by(user_id=user.id).one()
+
+    response = client.post(
+        f"/api/pose/results/{result.id}/ai-advice",
+        headers=_auth(token),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "AI provider config not found"
+
+
+def test_pose_ai_advice_uses_current_user_provider_and_saves_result(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("pose-ai-save@example.com")
+    db_session.add(_provider(user.id))
+    db_session.add(
+        PoseDetectionResult(
+            user_id=user.id,
+            started_at=datetime(2026, 6, 7, 8, 0, 0),
+            duration_seconds=120,
+            reps_counted=12,
+            score=82.5,
+            feedback_summary="起身阶段膝盖轻微内扣",
+            metrics_json={"source": "mediapipe_pose_landmarker"},
+        )
+    )
+    db_session.commit()
+    result = db_session.query(PoseDetectionResult).filter_by(user_id=user.id).one()
+
+    response = client.post(
+        f"/api/pose/results/{result.id}/ai-advice",
+        headers=_auth(token),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["result"]
+    assert data["ai_advice"].startswith("动作建议：")
+    assert data["ai_provider_type"] == "openai-compatible"
+    assert data["ai_model_name"] == "test-model"
+    assert data["ai_generated_at"] is not None
