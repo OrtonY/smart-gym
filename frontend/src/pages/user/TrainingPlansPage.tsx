@@ -8,6 +8,7 @@ import {
   Edit3,
   MessageSquare,
   Plus,
+  RefreshCw,
   Save,
   Trash2,
   X,
@@ -22,6 +23,7 @@ import {
   fetchTrainingPlan,
   fetchTrainingPlans,
   generateAiTrainingPlan,
+  reconcileTrainingPlans,
   replaceTrainingPlanItems,
 } from "../../api/client";
 
@@ -34,6 +36,17 @@ type ItemForm = {
   sets: string;
   reps: string;
   duration_minutes: string;
+  duration_seconds?: number | null;
+  rest_seconds?: number | null;
+  instruction?: string | null;
+  source_template_id?: number | null;
+  source_template_step_id?: number | null;
+  entry_type?: "scheduled" | "ad_hoc";
+  status?: "planned" | "completed" | "partial" | "skipped" | "rescheduled";
+  linked_workout_session_id?: number | null;
+  completed_at?: string | null;
+  actual_duration_seconds?: number | null;
+  actual_score?: number | null;
   notes: string;
 };
 
@@ -94,6 +107,8 @@ function createDefaultItem(dateKey: string): ItemForm {
     sets: "",
     reps: "",
     duration_minutes: "30",
+    entry_type: "scheduled",
+    status: "planned",
     notes: "",
   };
 }
@@ -108,6 +123,20 @@ function toFormItem(item: TrainingPlanItemPayload | TrainingPlanDetail["items"][
     sets: item.sets ? String(item.sets) : "",
     reps: item.reps ? String(item.reps) : "",
     duration_minutes: item.duration_minutes ? String(item.duration_minutes) : "",
+    duration_seconds: "duration_seconds" in item ? item.duration_seconds : null,
+    rest_seconds: "rest_seconds" in item ? item.rest_seconds : null,
+    instruction: "instruction" in item ? item.instruction : null,
+    source_template_id: "source_template_id" in item ? item.source_template_id : null,
+    source_template_step_id:
+      "source_template_step_id" in item ? item.source_template_step_id : null,
+    entry_type: "entry_type" in item ? item.entry_type : "scheduled",
+    status: "status" in item ? item.status : "planned",
+    linked_workout_session_id:
+      "linked_workout_session_id" in item ? item.linked_workout_session_id : null,
+    completed_at: "completed_at" in item ? item.completed_at : null,
+    actual_duration_seconds:
+      "actual_duration_seconds" in item ? item.actual_duration_seconds : null,
+    actual_score: "actual_score" in item ? item.actual_score : null,
     notes: item.notes ?? "",
   };
 }
@@ -123,6 +152,13 @@ function toPayload(item: ItemForm, sortOrder: number): TrainingPlanItemPayload {
     sets: item.sets ? Number(item.sets) : null,
     reps: item.reps ? Number(item.reps) : null,
     duration_minutes: item.duration_minutes ? Number(item.duration_minutes) : null,
+    duration_seconds: item.duration_seconds ?? undefined,
+    rest_seconds: item.rest_seconds ?? undefined,
+    instruction: item.instruction ?? undefined,
+    source_template_id: item.source_template_id ?? undefined,
+    source_template_step_id: item.source_template_step_id ?? undefined,
+    entry_type: item.entry_type ?? "scheduled",
+    status: item.status ?? "planned",
     notes: item.notes.trim() || null,
   };
 }
@@ -132,6 +168,52 @@ function metaText(item: ItemForm) {
     item.sets ? `${item.sets} 组` : null,
     item.reps ? `${item.reps} 次` : null,
     item.duration_minutes ? `${item.duration_minutes} 分钟` : null,
+  ].filter(Boolean);
+}
+
+function statusText(item: ItemForm) {
+  if (item.entry_type === "ad_hoc") {
+    return "临时";
+  }
+  const map = {
+    planned: "计划",
+    completed: "完成",
+    partial: "部分",
+    skipped: "跳过",
+    rescheduled: "顺延",
+  };
+  return map[item.status ?? "planned"];
+}
+
+function statusClass(item: ItemForm) {
+  if (item.entry_type === "ad_hoc") {
+    return "bg-gym-mint text-gym-teal";
+  }
+  if (item.status === "completed") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+  if (item.status === "partial") {
+    return "bg-amber-100 text-amber-700";
+  }
+  if (item.status === "skipped") {
+    return "bg-slate-200 text-slate-600";
+  }
+  if (item.status === "rescheduled") {
+    return "bg-blue-100 text-blue-700";
+  }
+  return "bg-slate-100 text-slate-700";
+}
+
+function recordMetaText(item: ItemForm) {
+  return [
+    ...metaText(item),
+    item.actual_duration_seconds
+      ? `实际 ${Math.round(item.actual_duration_seconds / 60)} 分钟`
+      : null,
+    item.actual_score !== null && item.actual_score !== undefined
+      ? `${Math.round(item.actual_score)} 分`
+      : null,
+    item.linked_workout_session_id ? `记录 #${item.linked_workout_session_id}` : null,
   ].filter(Boolean);
 }
 
@@ -376,6 +458,23 @@ export default function TrainingPlansPage() {
     }
   }
 
+  async function handleReconcile() {
+    setIsSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const result = await reconcileTrainingPlans();
+      await loadPlan(activePlan?.id);
+      setStatus(
+        `已同步：${result.reconciled_date}，跳过 ${result.skipped_items} 项，补入 ${result.ad_hoc_entries_created} 条记录`,
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "训练记录同步失败");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const planDates = useMemo(
     () => new Set(items.map(itemDateKey).filter((value): value is string => Boolean(value))),
     [items],
@@ -384,6 +483,9 @@ export default function TrainingPlansPage() {
 
   const selectedIsPast = selectedDate ? selectedDate < todayKey : false;
   const selectedDisplayItems = selectedDate ? itemsForDate(selectedDate) : [];
+  const selectedHasAdHoc = selectedDisplayItems.some(
+    (item) => item.entry_type === "ad_hoc",
+  );
 
   return (
     <section className="space-y-5">
@@ -392,15 +494,27 @@ export default function TrainingPlansPage() {
           <h2 className="text-2xl font-semibold text-slate-950">课表</h2>
           <p className="mt-1 text-sm text-slate-600">从今天开始的 7 天训练计划。</p>
         </div>
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
-          disabled={isSaving}
-          onClick={() => setGlobalAiOpen((current) => !current)}
-          type="button"
-        >
-          <MessageSquare aria-hidden="true" size={17} />
-          AI 对话
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-gym-teal hover:text-gym-teal disabled:opacity-60"
+            disabled={isSaving}
+            onClick={() => void handleReconcile()}
+            title="同步训练记录"
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={17} />
+            同步
+          </button>
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
+            disabled={isSaving}
+            onClick={() => setGlobalAiOpen((current) => !current)}
+            type="button"
+          >
+            <MessageSquare aria-hidden="true" size={17} />
+            AI 对话
+          </button>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -467,11 +581,21 @@ export default function TrainingPlansPage() {
               <div className="mt-4 space-y-2">
                 {dateItems.slice(0, 3).map((item, itemIndex) => (
                   <div key={`${item.title}-${itemIndex}`} className="rounded-md bg-slate-50 p-2">
-                    <p className="line-clamp-2 text-sm font-semibold text-slate-950">
-                      {item.title}
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="line-clamp-2 text-sm font-semibold text-slate-950">
+                        {item.title}
+                      </p>
+                      <span
+                        className={[
+                          "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+                          statusClass(item),
+                        ].join(" ")}
+                      >
+                        {statusText(item)}
+                      </span>
+                    </div>
                     <p className="mt-1 text-xs text-slate-500">
-                      {metaText(item).join(" · ") || "训练"}
+                      {recordMetaText(item).join(" · ") || "训练"}
                     </p>
                   </div>
                 ))}
@@ -584,24 +708,36 @@ export default function TrainingPlansPage() {
               <div className="mt-5 space-y-3">
                 {selectedDisplayItems.map((item, index) => (
                   <article key={`${item.title}-${index}`} className="rounded-lg border border-slate-200 p-4">
-                    <h4 className="text-base font-semibold text-slate-950">
-                      {item.title}
-                    </h4>
+                    <div className="flex items-start justify-between gap-3">
+                      <h4 className="text-base font-semibold text-slate-950">
+                        {item.title}
+                      </h4>
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          statusClass(item),
+                        ].join(" ")}
+                      >
+                        {statusText(item)}
+                      </span>
+                    </div>
                     <p className="mt-2 text-sm text-slate-600">
-                      {metaText(item).join(" · ") || "训练"}
+                      {recordMetaText(item).join(" · ") || "训练"}
                     </p>
                     {item.notes ? (
                       <p className="mt-2 text-sm leading-6 text-slate-600">
                         {item.notes}
                       </p>
                     ) : null}
-                    <Link
-                      className="mt-3 inline-flex items-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint"
-                      to={poseUrl(item)}
-                    >
-                      <Camera aria-hidden="true" size={17} />
-                      动作检测
-                    </Link>
+                    {item.entry_type !== "ad_hoc" ? (
+                      <Link
+                        className="mt-3 inline-flex items-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint"
+                        to={poseUrl(item)}
+                      >
+                        <Camera aria-hidden="true" size={17} />
+                        动作检测
+                      </Link>
+                    ) : null}
                   </article>
                 ))}
                 {selectedDisplayItems.length === 0 ? (
@@ -753,11 +889,13 @@ export default function TrainingPlansPage() {
               ) : (
                 <button
                   className="inline-flex items-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-                  disabled={selectedIsPast}
+                  disabled={selectedIsPast || selectedHasAdHoc}
                   onClick={() => {
                     setModalItems(
                       selectedDisplayItems.length > 0
-                        ? selectedDisplayItems
+                        ? selectedDisplayItems.filter(
+                            (item) => item.entry_type !== "ad_hoc",
+                          )
                         : [createDefaultItem(selectedDate)],
                     );
                     setIsModalEditing(true);
@@ -772,6 +910,11 @@ export default function TrainingPlansPage() {
 
             {selectedIsPast ? (
               <p className="mt-3 text-sm text-slate-500">过去日期不可修改。</p>
+            ) : null}
+            {selectedHasAdHoc ? (
+              <p className="mt-3 text-sm text-slate-500">
+                临时训练记录不可作为未来计划编辑。
+              </p>
             ) : null}
           </div>
         </div>
