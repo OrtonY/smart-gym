@@ -194,6 +194,38 @@ export type WorkoutSession = {
 
 export type WorkoutSessionPayload = Omit<WorkoutSession, "id" | "user_id">;
 
+export type PoseDetectionResult = {
+  id: number;
+  user_id: number;
+  workout_session_id: number | null;
+  exercise_id: number | null;
+  workout_mode_id: number | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number;
+  reps_counted: number;
+  score: number | null;
+  feedback_summary: string | null;
+  metrics_json: Record<string, unknown>;
+  landmarks_sample_json: Record<string, unknown> | null;
+  ai_advice: string | null;
+  ai_provider_type: string | null;
+  ai_model_name: string | null;
+  ai_generated_at: string | null;
+  created_at: string;
+};
+
+export type PoseDetectionResultPayload = Omit<
+  PoseDetectionResult,
+  | "id"
+  | "user_id"
+  | "ai_advice"
+  | "ai_provider_type"
+  | "ai_model_name"
+  | "ai_generated_at"
+  | "created_at"
+>;
+
 export type WorkoutSummary = {
   sessions_count: number;
   total_duration_minutes: number;
@@ -332,6 +364,26 @@ export function createWorkoutSession(payload: WorkoutSessionPayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function fetchPoseDetectionResults() {
+  return apiRequest<PoseDetectionResult[]>("/pose/results");
+}
+
+export function createPoseDetectionResult(payload: PoseDetectionResultPayload) {
+  return apiRequest<PoseDetectionResult>("/pose/results", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function requestPoseAdvice(resultId: number) {
+  return apiRequest<{ result: PoseDetectionResult }>(
+    `/pose/results/${resultId}/ai-advice`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function fetchWorkoutSummary() {
