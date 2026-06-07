@@ -1,7 +1,7 @@
 """phase 4 pose detection
 
 Revision ID: 20260607_phase4_pose
-Revises: 20260606_phase3_ai_plans
+Revises: 20260606_plan_item_dates
 Create Date: 2026-06-07 10:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "20260607_phase4_pose"
-down_revision: Union[str, Sequence[str], None] = "20260606_phase3_ai_plans"
+down_revision: Union[str, Sequence[str], None] = "20260606_plan_item_dates"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
