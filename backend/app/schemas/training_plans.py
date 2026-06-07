@@ -16,6 +16,16 @@ class TrainingPlanItemBase(BaseModel):
     sets: Optional[int] = Field(default=None, ge=1, le=100)
     reps: Optional[int] = Field(default=None, ge=1, le=10000)
     duration_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    duration_seconds: Optional[int] = Field(default=None, ge=1, le=86_400)
+    rest_seconds: Optional[int] = Field(default=None, ge=0, le=86_400)
+    instruction: Optional[str] = None
+    source_template_id: Optional[int] = Field(default=None, ge=1)
+    source_template_step_id: Optional[int] = Field(default=None, ge=1)
+    entry_type: str = Field(default="scheduled", pattern="^(scheduled|ad_hoc)$")
+    status: str = Field(
+        default="planned",
+        pattern="^(planned|completed|partial|skipped|rescheduled)$",
+    )
     notes: Optional[str] = None
 
     @model_validator(mode="after")
@@ -35,6 +45,10 @@ class TrainingPlanItemResponse(TrainingPlanItemBase):
     id: int
     training_plan_id: int
     version_number: int
+    linked_workout_session_id: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    actual_duration_seconds: Optional[int] = None
+    actual_score: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -156,3 +156,40 @@ def test_seed_default_training_content_creates_templates(db_session):
 
     assert len(slugs) >= 6
     assert "lower-body-foundation" in slugs
+
+
+def test_apply_template_to_plan_copies_steps_not_template_references(
+    client, create_user_and_token
+):
+    _, admin_token = create_user_and_token("apply-admin@example.com", role="admin")
+    _, user_token = create_user_and_token("apply-user@example.com")
+    template = client.post(
+        "/api/admin/workout-templates",
+        headers=_auth(admin_token),
+        json=_template_payload("apply-template", "模板"),
+    ).json()
+
+    response = client.post(
+        f"/api/workout-templates/{template['id']}/apply-to-plan",
+        headers=_auth(user_token),
+        json={"scheduled_date": "2026-06-08", "plan_title": "我的训练计划"},
+    )
+
+    assert response.status_code == 201
+    item = response.json()["items"][0]
+    assert item["title"] == "徒手深蹲"
+    assert item["source_template_id"] == template["id"]
+    assert item["source_template_step_id"] == template["steps"][0]["id"]
+    assert item["status"] == "planned"
+    assert item["entry_type"] == "scheduled"
+
+    client.put(
+        f"/api/admin/workout-templates/{template['id']}",
+        headers=_auth(admin_token),
+        json={"title": "已改模板", "steps": []},
+    )
+    detail = client.get(
+        f"/api/training-plans/{response.json()['id']}",
+        headers=_auth(user_token),
+    ).json()
+    assert detail["items"][0]["title"] == "徒手深蹲"

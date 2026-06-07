@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,3 +74,10 @@ class WorkoutTemplateResponse(WorkoutTemplateBase):
     created_at: datetime
     updated_at: datetime
     steps: list[WorkoutTemplateStepResponse] = Field(default_factory=list)
+
+
+class WorkoutTemplateApplyToPlan(BaseModel):
+    scheduled_date: date
+    plan_title: str = Field(default="我的训练计划", min_length=1, max_length=160)
+
+    model_config = ConfigDict(extra="forbid")
