@@ -23,3 +23,6 @@ class UserProfile(Base):
     fitness_goal: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     training_frequency: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     dietary_preferences: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    timezone: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="Asia/Shanghai"
+    )

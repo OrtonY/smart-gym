@@ -26,6 +26,9 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.workout_mode import WorkoutMode
 from app.models.workout_session import WorkoutSession
+from app.models.workout_session_step import WorkoutSessionStep
+from app.models.workout_template import WorkoutTemplate
+from app.models.workout_template_step import WorkoutTemplateStep
 
 _models = (
     AiConversation,
@@ -44,6 +47,9 @@ _models = (
     UserProfile,
     WorkoutMode,
     WorkoutSession,
+    WorkoutSessionStep,
+    WorkoutTemplate,
+    WorkoutTemplateStep,
 )
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite:///:memory:")
 
