@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Bot } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { UserProfile, fetchProfile, updateProfile } from "../../api/client";
 
@@ -70,6 +72,18 @@ export default function ProfilePage() {
           身体数据和目标会用于后续 AI 训练建议。
         </p>
       </div>
+      <Link
+        className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-soft transition hover:border-gym-teal"
+        to="/app/ai-settings"
+      >
+        <span>
+          <span className="block text-base font-semibold text-slate-950">AI 设置</span>
+          <span className="mt-1 block text-sm text-slate-600">
+            配置训练计划和建议使用的模型。
+          </span>
+        </span>
+        <Bot aria-hidden="true" className="text-gym-teal" size={22} />
+      </Link>
       <form
         className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-soft sm:grid-cols-2"
         onSubmit={handleSubmit}
