@@ -63,6 +63,28 @@ function stepMeta(step: WorkoutSessionStep) {
     .join(" · ");
 }
 
+function resultText(result: StepResult | undefined) {
+  if (!result) {
+    return "未记录";
+  }
+  return result.status === "completed"
+    ? "已完成"
+    : result.status === "skipped"
+      ? "已跳过"
+      : "部分完成";
+}
+
+function resultClass(result: StepResult | undefined) {
+  if (!result) {
+    return "bg-slate-100 text-slate-600";
+  }
+  return result.status === "completed"
+    ? "bg-emerald-100 text-emerald-700"
+    : result.status === "skipped"
+      ? "bg-slate-200 text-slate-600"
+      : "bg-amber-100 text-amber-700";
+}
+
 export default function GuidedWorkoutPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -73,6 +95,7 @@ export default function GuidedWorkoutPage() {
   const [results, setResults] = useState<Record<number, StepResult>>({});
   const [isFinishing, setIsFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const latestPoseStateRef = useRef<PoseDetectionSnapshotState | null>(null);
 
   const steps = session?.steps ?? [];
@@ -108,24 +131,43 @@ export default function GuidedWorkoutPage() {
 
   function saveCurrentStep(status: StepResult["status"]) {
     if (!activeStep) {
-      return;
+      return null;
     }
-    setResults((current) => ({
-      ...current,
+    const nextResults = {
+      ...results,
       [activeStep.sort_order]: {
         status,
         snapshotState: latestPoseStateRef.current,
       },
-    }));
+    };
+    setResults(nextResults);
+    return nextResults;
+  }
+
+  function nextNotice(status: StepResult["status"], step: WorkoutSessionStep) {
+    const actionText = status === "completed" ? "完成" : "跳过";
+    if (activeIndex >= steps.length - 1) {
+      return `已${actionText}「${step.title}」。这是最后一个动作，点击“结束训练”查看复盘。`;
+    }
+    const nextStep = steps[activeIndex + 1];
+    return `已${actionText}「${step.title}」，已进入「${nextStep.title}」。`;
   }
 
   function handleCompleteAndNext() {
+    const step = activeStep;
     saveCurrentStep("completed");
+    if (step) {
+      setNotice(nextNotice("completed", step));
+    }
     setActiveIndex((current) => nextStepIndex(current, steps.length));
   }
 
   function handleSkipAndNext() {
+    const step = activeStep;
     saveCurrentStep("skipped");
+    if (step) {
+      setNotice(nextNotice("skipped", step));
+    }
     setActiveIndex((current) => nextStepIndex(current, steps.length));
   }
 
@@ -177,6 +219,7 @@ export default function GuidedWorkoutPage() {
     const durationMinutes = durationMinutesFrom(session.started_at);
     setIsFinishing(true);
     setError(null);
+    setNotice("正在保存本次训练...");
     try {
       const finished = await finishWorkoutSession(session.id, {
         ended_at: new Date().toISOString(),
@@ -238,6 +281,11 @@ export default function GuidedWorkoutPage() {
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {notice ? (
+        <div className="rounded-lg border border-gym-teal/30 bg-gym-mint px-4 py-3 text-sm font-medium text-gym-teal">
+          {notice}
+        </div>
+      ) : null}
 
       {activeStep ? (
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
@@ -291,6 +339,39 @@ export default function GuidedWorkoutPage() {
       {!session.pose_detection_enabled ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-soft">
           本次训练未开启姿态检测。
+        </div>
+      ) : null}
+
+      {steps.length > 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+          <h3 className="text-base font-semibold text-slate-950">动作进度</h3>
+          <div className="mt-3 space-y-2">
+            {steps.map((step, index) => {
+              const result = results[step.sort_order];
+              const isActive = index === activeIndex;
+              return (
+                <div
+                  key={step.id}
+                  className={[
+                    "flex items-center justify-between gap-3 rounded-md border px-3 py-2",
+                    isActive ? "border-gym-teal" : "border-slate-200",
+                  ].join(" ")}
+                >
+                  <span className="min-w-0 truncate text-sm font-medium text-slate-700">
+                    {index + 1}. {step.title}
+                  </span>
+                  <span
+                    className={[
+                      "shrink-0 rounded-md px-2 py-1 text-xs font-medium",
+                      resultClass(result),
+                    ].join(" ")}
+                  >
+                    {isActive && !result ? "当前" : resultText(result)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : null}
     </section>
