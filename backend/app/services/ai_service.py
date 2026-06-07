@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -50,6 +51,13 @@ POSE_ADVICE_SYSTEM_PROMPT = (
     "You are a fitness movement coach. Return concise Chinese advice only. "
     "Use 3 short sentences at most. Focus on movement safety, one correction, "
     "and one next-set cue. Do not mention private data or provider metadata."
+)
+
+FOOD_RECOGNITION_SYSTEM_PROMPT = (
+    "You are a nutrition assistant. Return only JSON with keys food_name, "
+    "description, calories_kcal, protein_g, carbs_g, fat_g, confidence. "
+    "Use Chinese for food_name and description. Estimate one meal portion. "
+    "If uncertain, lower confidence but still return numeric calorie and macro estimates."
 )
 
 
@@ -127,6 +135,15 @@ def _parse_optional_positive_int(value: Any) -> Optional[int]:
     if parsed is None or parsed < 1:
         return None
     return parsed
+
+
+def _parse_optional_float(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    match = re.search(r"\d+(?:\.\d+)?", str(value))
+    return float(match.group(0)) if match else None
 
 
 def _parse_optional_date(value: Any) -> Optional[date]:
@@ -548,6 +565,171 @@ def generate_pose_detection_advice(
         return _call_text_openai_compatible(config, messages)
     if config.provider_type == "ollama":
         return _call_text_ollama(config, messages)
+
+    raise AiCoachError("Unsupported AI provider")
+
+
+def _fake_food_recognition(description: str, has_image: bool) -> dict[str, Any]:
+    normalized = description.strip()
+    food_name = "鸡胸肉沙拉" if "沙拉" in normalized or has_image else "手动描述餐食"
+    return {
+        "food_name": food_name,
+        "description": normalized or "根据图片估算的一份均衡餐食",
+        "calories_kcal": 420 if food_name == "鸡胸肉沙拉" else 360,
+        "protein_g": 35.0 if food_name == "鸡胸肉沙拉" else 18.0,
+        "carbs_g": 28.0,
+        "fat_g": 14.0,
+        "confidence": 0.84 if has_image else 0.62,
+    }
+
+
+def _bounded_float(value: Any, upper: float) -> Optional[float]:
+    parsed = _parse_optional_float(value)
+    if parsed is None:
+        return None
+    return max(0.0, min(parsed, upper))
+
+
+def _bounded_int(value: Any, upper: int) -> int:
+    parsed = _parse_optional_int(value)
+    if parsed is None:
+        return 0
+    return max(0, min(parsed, upper))
+
+
+def _parse_food_recognition_content(content: str) -> dict[str, Any]:
+    try:
+        data = json.loads(_strip_json_fence(content))
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise AiCoachError("AI provider returned invalid food JSON") from exc
+    if not isinstance(data, dict):
+        raise AiCoachError("AI provider returned invalid food JSON")
+
+    food_name = data.get("food_name") or data.get("name") or data.get("food")
+    if not food_name:
+        raise AiCoachError("AI provider returned food without name")
+
+    confidence = _bounded_float(data.get("confidence"), 1.0)
+    return {
+        "food_name": str(food_name)[:160],
+        "description": _normalize_notes(data.get("description")),
+        "calories_kcal": _bounded_int(
+            data.get("calories_kcal") or data.get("calories"), 10_000
+        ),
+        "protein_g": _bounded_float(data.get("protein_g") or data.get("protein"), 1_000),
+        "carbs_g": _bounded_float(data.get("carbs_g") or data.get("carbs"), 1_000),
+        "fat_g": _bounded_float(data.get("fat_g") or data.get("fat"), 1_000),
+        "confidence": confidence,
+    }
+
+
+def _food_recognition_prompt(description: str, has_image: bool) -> str:
+    return json.dumps(
+        {
+            "user_description": description.strip() or None,
+            "has_image": has_image,
+            "instruction": "Estimate the visible food and calories for one meal portion.",
+        },
+        ensure_ascii=False,
+    )
+
+
+def _image_data_url(image_bytes: bytes, image_mime_type: Optional[str]) -> str:
+    mime_type = image_mime_type or "image/jpeg"
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def _call_food_openai_compatible(
+    config: AiProviderConfig,
+    description: str,
+    image_bytes: Optional[bytes],
+    image_mime_type: Optional[str],
+) -> dict[str, Any]:
+    base_url = (config.base_url or "https://api.openai.com/v1").rstrip("/")
+    api_key = decrypt_api_key(config.api_key_encrypted)
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=30.0,
+        max_retries=0,
+    )
+    user_prompt = _food_recognition_prompt(description, image_bytes is not None)
+    user_content: Any = user_prompt
+    if image_bytes is not None:
+        user_content = [
+            {"type": "text", "text": user_prompt},
+            {
+                "type": "image_url",
+                "image_url": {"url": _image_data_url(image_bytes, image_mime_type)},
+            },
+        ]
+
+    try:
+        response = client.chat.completions.create(
+            model=config.model_name,
+            messages=[
+                {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.2,
+        )
+        content = response.choices[0].message.content
+    except OpenAIAPIError as exc:
+        raise AiCoachError("AI provider request failed") from exc
+    except (AttributeError, IndexError, TypeError, ValueError) as exc:
+        raise AiCoachError("AI provider returned invalid response") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise AiCoachError("AI provider returned invalid response")
+    return _parse_food_recognition_content(content)
+
+
+def _call_food_ollama(
+    config: AiProviderConfig,
+    description: str,
+    image_bytes: Optional[bytes],
+) -> dict[str, Any]:
+    base_url = (config.base_url or "http://127.0.0.1:11434").rstrip("/")
+    client = OllamaClient(host=base_url, timeout=60.0)
+    user_message: dict[str, Any] = {
+        "role": "user",
+        "content": _food_recognition_prompt(description, image_bytes is not None),
+    }
+    if image_bytes is not None:
+        user_message["images"] = [base64.b64encode(image_bytes).decode("ascii")]
+    try:
+        response = client.chat(
+            model=config.model_name,
+            messages=[
+                {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
+                user_message,
+            ],
+        )
+        content = response.message.content
+    except (OllamaResponseError, ConnectionError, OSError) as exc:
+        raise AiCoachError("AI provider request failed") from exc
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise AiCoachError("AI provider returned invalid response") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise AiCoachError("AI provider returned invalid response")
+    return _parse_food_recognition_content(content)
+
+
+def generate_food_recognition(
+    config: AiProviderConfig,
+    description: str,
+    image_bytes: Optional[bytes] = None,
+    image_mime_type: Optional[str] = None,
+) -> dict[str, Any]:
+    if os.getenv("SMART_GYM_AI_FAKE_RESPONSES") == "true":
+        return _fake_food_recognition(description, image_bytes is not None)
+
+    if config.provider_type in {"openai", "openai-compatible", "openai_compatible"}:
+        return _call_food_openai_compatible(
+            config, description, image_bytes, image_mime_type
+        )
+    if config.provider_type == "ollama":
+        return _call_food_ollama(config, description, image_bytes)
 
     raise AiCoachError("Unsupported AI provider")
 

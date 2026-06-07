@@ -11,6 +11,7 @@ import {
   Shield,
   Sun,
   Trophy,
+  Utensils,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
@@ -25,6 +26,7 @@ const userNavItems = [
   { to: "/app", label: "首页", icon: Home },
   { to: "/app/train", label: "训练", icon: Dumbbell },
   { to: "/app/plans", label: "课表", icon: CalendarDays },
+  { to: "/app/nutrition", label: "饮食", icon: Utensils },
   { to: "/app/leaderboard", label: "榜单", icon: Trophy },
   { to: "/app/ai-settings", label: "AI", icon: Bot },
   { to: "/app/profile", label: "我的", icon: Settings },
@@ -147,7 +149,7 @@ export default function Layout({ mode }: LayoutProps) {
         <div
           className={[
             "mx-auto grid max-w-md gap-2",
-            isAdmin ? "grid-cols-3" : "grid-cols-6",
+            isAdmin ? "grid-cols-3" : "grid-cols-7",
           ].join(" ")}
         >
           {items.map((item) => {

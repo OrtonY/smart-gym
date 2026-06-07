@@ -13,9 +13,11 @@ from app.main import app
 from app.models.ai_conversation import AiConversation
 from app.models.ai_message import AiMessage
 from app.models.ai_provider_config import AiProviderConfig
+from app.models.device_metric import DeviceMetric
 from app.models.exercise import Exercise
 from app.models.leaderboard_refresh_state import LeaderboardRefreshState
 from app.models.leaderboard_snapshot import LeaderboardSnapshot
+from app.models.nutrition_log import NutritionLog
 from app.models.pose_detection_result import PoseDetectionResult
 from app.models.training_plan import TrainingPlan
 from app.models.training_plan_item import TrainingPlanItem
@@ -29,9 +31,11 @@ _models = (
     AiConversation,
     AiMessage,
     AiProviderConfig,
+    DeviceMetric,
     Exercise,
     LeaderboardRefreshState,
     LeaderboardSnapshot,
+    NutritionLog,
     PoseDetectionResult,
     TrainingPlan,
     TrainingPlanItem,

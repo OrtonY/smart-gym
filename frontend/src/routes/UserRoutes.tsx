@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import AiProviderSettingsPage from "../pages/user/AiProviderSettingsPage";
 import HomePage from "../pages/user/HomePage";
 import LeaderboardPage from "../pages/user/LeaderboardPage";
+import NutritionPage from "../pages/user/NutritionPage";
 import PoseDetectionPage from "../pages/user/PoseDetectionPage";
 import ProfilePage from "../pages/user/ProfilePage";
 import TrainingPage from "../pages/user/TrainingPage";
@@ -16,6 +17,7 @@ export default function UserRoutes() {
         <Route index element={<HomePage />} />
         <Route path="train" element={<TrainingPage />} />
         <Route path="pose" element={<PoseDetectionPage />} />
+        <Route path="nutrition" element={<NutritionPage />} />
         <Route path="plans" element={<TrainingPlansPage />} />
         <Route path="leaderboard" element={<LeaderboardPage />} />
         <Route path="profile" element={<ProfilePage />} />

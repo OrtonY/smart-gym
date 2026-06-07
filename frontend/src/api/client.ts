@@ -67,7 +67,11 @@ async function readErrorMessage(response: Response) {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}) {
   const headers = new Headers(options.headers);
-  if (!headers.has("Content-Type") && options.body) {
+  if (
+    !headers.has("Content-Type") &&
+    options.body &&
+    !(options.body instanceof FormData)
+  ) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -225,6 +229,76 @@ export type PoseDetectionResultPayload = Omit<
   | "ai_generated_at"
   | "created_at"
 >;
+
+export type NutritionLog = {
+  id: number;
+  user_id: number;
+  logged_at: string;
+  meal_type: "breakfast" | "lunch" | "dinner" | "snack" | "other";
+  food_name: string;
+  description: string | null;
+  image_path: string | null;
+  calories_kcal: number;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  ai_confidence: number | null;
+  ai_provider_type: string | null;
+  ai_model_name: string | null;
+  ai_raw_json: Record<string, unknown> | null;
+  user_correction: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NutritionLogPayload = Omit<
+  NutritionLog,
+  | "id"
+  | "user_id"
+  | "image_path"
+  | "ai_confidence"
+  | "ai_provider_type"
+  | "ai_model_name"
+  | "ai_raw_json"
+  | "user_correction"
+  | "created_at"
+  | "updated_at"
+>;
+
+export type NutritionCorrectionPayload = Partial<
+  Pick<
+    NutritionLog,
+    "food_name" | "description" | "calories_kcal" | "protein_g" | "carbs_g" | "fat_g"
+  >
+> & {
+  user_correction: string;
+};
+
+export type DeviceMetric = {
+  id: number;
+  user_id: number;
+  source: string;
+  metric_type: string;
+  measured_at: string;
+  value: number;
+  unit: string;
+  workout_session_id: number | null;
+  raw_json: Record<string, unknown>;
+  created_at: string;
+};
+
+export type HeartRateImportPayload = {
+  source: string;
+  workout_session_id?: number | null;
+  samples: Array<{ measured_at: string; bpm: number }>;
+};
+
+export type HeartRateSummary = {
+  samples_count: number;
+  latest_bpm: number | null;
+  average_bpm: number | null;
+  max_bpm: number | null;
+};
 
 export type WorkoutSummary = {
   sessions_count: number;
@@ -384,6 +458,52 @@ export function requestPoseAdvice(resultId: number) {
       method: "POST",
     },
   );
+}
+
+export function fetchNutritionLogs() {
+  return apiRequest<NutritionLog[]>("/nutrition/logs");
+}
+
+export function createNutritionLog(payload: NutritionLogPayload) {
+  return apiRequest<NutritionLog>("/nutrition/logs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function recognizeFood(formData: FormData) {
+  return apiRequest<{ log: NutritionLog }>("/nutrition/recognize", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function updateNutritionLogCorrection(
+  logId: number,
+  payload: NutritionCorrectionPayload,
+) {
+  return apiRequest<NutritionLog>(`/nutrition/logs/${logId}/correction`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function importHeartRateSamples(payload: HeartRateImportPayload) {
+  return apiRequest<{ metrics: DeviceMetric[] }>("/devices/heart-rate/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchDeviceMetrics(metricType?: string) {
+  const params = metricType
+    ? `?${new URLSearchParams({ metric_type: metricType }).toString()}`
+    : "";
+  return apiRequest<DeviceMetric[]>(`/devices/metrics${params}`);
+}
+
+export function fetchHeartRateSummary() {
+  return apiRequest<HeartRateSummary>("/devices/heart-rate/summary");
 }
 
 export function fetchWorkoutSummary() {
