@@ -11,6 +11,7 @@ from app.api.routes import (
     leaderboard,
     nutrition,
     pose,
+    today,
     training_plans,
     users,
     workout_templates,
@@ -28,6 +29,7 @@ api_router.include_router(health.router, prefix="/health", tags=["health"])
 api_router.include_router(leaderboard.router, prefix="/leaderboard", tags=["leaderboard"])
 api_router.include_router(nutrition.router, prefix="/nutrition", tags=["nutrition"])
 api_router.include_router(pose.router, prefix="/pose", tags=["pose"])
+api_router.include_router(today.router, prefix="/today", tags=["today"])
 api_router.include_router(
     training_plans.router, prefix="/training-plans", tags=["training-plans"]
 )
