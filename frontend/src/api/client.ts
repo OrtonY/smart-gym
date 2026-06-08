@@ -400,6 +400,39 @@ export type NutritionPlanDetail = NutritionPlan & {
   }>;
 };
 
+export type AiConversationMessage = {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant" | string;
+  content: string;
+  provider_type: string | null;
+  model_name: string | null;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type AiConversationSummary = {
+  id: number;
+  user_id: number;
+  topic: "training_plan" | "nutrition_plan" | "food_record" | string;
+  training_plan_id: number | null;
+  nutrition_plan_id: number | null;
+  title: string;
+  last_message_preview: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AiConversationDetail = AiConversationSummary & {
+  messages: AiConversationMessage[];
+};
+
+export type AiConversationQuery = {
+  topic?: string;
+  trainingPlanId?: number | null;
+  nutritionPlanId?: number | null;
+};
+
 export type NutritionSummary = {
   today: {
     date: string;
@@ -823,7 +856,7 @@ export function createNutritionLog(payload: NutritionLogPayload) {
 }
 
 export function recognizeFood(formData: FormData) {
-  return apiRequest<{ log: NutritionLog }>("/nutrition/recognize", {
+  return apiRequest<{ log: NutritionLog; conversation_id: number }>("/nutrition/recognize", {
     method: "POST",
     body: formData,
   });
@@ -851,22 +884,39 @@ export function fetchNutritionPlan(planId: number) {
   return apiRequest<NutritionPlanDetail>(`/nutrition/plans/${planId}`);
 }
 
-export function generateNutritionPlan(prompt: string) {
+export function fetchAiConversations(query: AiConversationQuery) {
+  const params = new URLSearchParams();
+  if (query.topic) params.set("topic", query.topic);
+  if (query.trainingPlanId) params.set("training_plan_id", String(query.trainingPlanId));
+  if (query.nutritionPlanId) params.set("nutrition_plan_id", String(query.nutritionPlanId));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return apiRequest<AiConversationSummary[]>(`/ai-conversations${suffix}`);
+}
+
+export function fetchAiConversation(conversationId: number) {
+  return apiRequest<AiConversationDetail>(`/ai-conversations/${conversationId}`);
+}
+
+export function generateNutritionPlan(prompt: string, conversationId?: number | null) {
   return apiRequest<{ conversation_id: number; plan: NutritionPlanDetail }>(
     "/ai-coach/nutrition-plans/generate",
     {
       method: "POST",
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, conversation_id: conversationId || undefined }),
     },
   );
 }
 
-export function adjustNutritionPlan(planId: number, prompt: string) {
+export function adjustNutritionPlan(
+  planId: number,
+  prompt: string,
+  conversationId?: number | null,
+) {
   return apiRequest<{ conversation_id: number; plan: NutritionPlanDetail }>(
     `/ai-coach/nutrition-plans/${planId}/adjust`,
     {
       method: "POST",
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, conversation_id: conversationId || undefined }),
     },
   );
 }
@@ -936,10 +986,18 @@ export function reconcileTrainingPlans(today?: string) {
   });
 }
 
-export function generateAiTrainingPlan(prompt: string, title?: string) {
+export function generateAiTrainingPlan(
+  prompt: string,
+  title?: string,
+  conversationId?: number | null,
+) {
   return apiRequest<AiTrainingPlanResponse>("/ai-coach/training-plans/generate", {
     method: "POST",
-    body: JSON.stringify({ prompt, title: title || undefined }),
+    body: JSON.stringify({
+      prompt,
+      title: title || undefined,
+      conversation_id: conversationId || undefined,
+    }),
   });
 }
 
@@ -947,12 +1005,17 @@ export function adjustAiTrainingPlan(
   planId: number,
   message: string,
   targetDate?: string,
+  conversationId?: number | null,
 ) {
   return apiRequest<AiTrainingPlanResponse>(
     `/ai-coach/training-plans/${planId}/adjust`,
     {
       method: "POST",
-      body: JSON.stringify({ message, target_date: targetDate }),
+      body: JSON.stringify({
+        message,
+        target_date: targetDate,
+        conversation_id: conversationId || undefined,
+      }),
     },
   );
 }
