@@ -78,7 +78,9 @@ NUTRITION_PLAN_SYSTEM_PROMPT = (
     "days_count must be 1-14. meals must include one breakfast, lunch, dinner, and snack "
     "per day. Each meal must include scheduled_date as YYYY-MM-DD, meal_type, sort_order, "
     "title, food_items array, portion_notes, target_calories_kcal, target_protein_g, "
-    "target_carbs_g, target_fat_g, notes. Use Chinese for titles and notes."
+    "target_carbs_g, target_fat_g, notes. meal_type must be one of breakfast, lunch, "
+    "dinner, snack. food_items must be objects with name and optional portion. "
+    "Use Chinese for titles and notes."
 )
 
 MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
@@ -322,7 +324,7 @@ def _call_openai_compatible(
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=30.0,
+        timeout=60.0,
         max_retries=0,
     )
     try:
@@ -536,7 +538,7 @@ def _call_text_openai_compatible(
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=30.0,
+        timeout=60.0,
         max_retries=0,
     )
     try:
@@ -689,6 +691,66 @@ def _parse_food_recognition_content(content: str) -> dict[str, Any]:
     }
 
 
+def _normalize_nutrition_meal_type(value: Any) -> Any:
+    if value is None:
+        return value
+    normalized = str(value).strip().lower()
+    meal_type_map = {
+        "breakfast": "breakfast",
+        "morning": "breakfast",
+        "morning meal": "breakfast",
+        "\u65e9\u9910": "breakfast",
+        "\u65e9\u996d": "breakfast",
+        "lunch": "lunch",
+        "noon": "lunch",
+        "midday meal": "lunch",
+        "\u5348\u9910": "lunch",
+        "\u5348\u996d": "lunch",
+        "dinner": "dinner",
+        "supper": "dinner",
+        "evening meal": "dinner",
+        "\u665a\u9910": "dinner",
+        "\u665a\u996d": "dinner",
+        "snack": "snack",
+        "snacks": "snack",
+        "extra meal": "snack",
+        "\u52a0\u9910": "snack",
+        "\u96f6\u98df": "snack",
+    }
+    return meal_type_map.get(normalized, value)
+
+
+def _normalize_nutrition_food_items(value: Any) -> list[dict[str, Any]]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        return [{"name": value}]
+    if not isinstance(value, list):
+        return []
+
+    items: list[dict[str, Any]] = []
+    for raw_item in value[:20]:
+        if isinstance(raw_item, dict):
+            item = dict(raw_item)
+            name = (
+                item.get("name")
+                or item.get("food_name")
+                or item.get("food")
+                or item.get("title")
+            )
+            if name is not None and "name" not in item:
+                item["name"] = str(name)
+            portion = item.get("portion") or item.get("amount") or item.get("serving")
+            if portion is not None and "portion" not in item:
+                item["portion"] = str(portion)
+            items.append(item)
+        elif raw_item is not None:
+            name = str(raw_item).strip()
+            if name:
+                items.append({"name": name})
+    return items
+
+
 def _parse_nutrition_plan_content(
     content: str, fallback_start: date
 ) -> tuple[str, int, list[NutritionPlanMealCreate], str]:
@@ -715,10 +777,10 @@ def _parse_nutrition_plan_content(
             "scheduled_date": raw_meal.get("scheduled_date")
             or raw_meal.get("date")
             or fallback_start.isoformat(),
-            "meal_type": raw_meal.get("meal_type"),
+            "meal_type": _normalize_nutrition_meal_type(raw_meal.get("meal_type")),
             "sort_order": _parse_optional_int(raw_meal.get("sort_order")) or index,
             "title": raw_meal.get("title") or raw_meal.get("name") or "计划餐",
-            "food_items": raw_meal.get("food_items") or [],
+            "food_items": _normalize_nutrition_food_items(raw_meal.get("food_items")),
             "portion_notes": _normalize_notes(raw_meal.get("portion_notes")),
             "target_calories_kcal": _bounded_int(
                 raw_meal.get("target_calories_kcal") or raw_meal.get("calories_kcal"),

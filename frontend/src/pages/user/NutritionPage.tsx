@@ -1,5 +1,6 @@
 ﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  CalendarDays,
   HeartPulse,
   ImageUp,
   ListChecks,
@@ -8,6 +9,7 @@ import {
   Save,
   Sparkles,
   Utensils,
+  X,
 } from "lucide-react";
 
 import {
@@ -19,6 +21,8 @@ import {
   createNutritionLog,
   fetchHeartRateSummary,
   fetchNutritionLogs,
+  fetchNutritionPlan,
+  fetchNutritionPlans,
   fetchNutritionSummary,
   generateNutritionPlan,
   importHeartRateSamples,
@@ -27,8 +31,10 @@ import {
 } from "../../api/client";
 
 type MealType = NutritionLog["meal_type"];
-type NutritionTab = "plan" | "recognize" | "manual" | "records" | "heart";
+type NutritionTab = "records" | "heart";
+type RecordMode = "recognize" | "manual";
 type PlanMealType = "breakfast" | "lunch" | "dinner" | "snack";
+type PlanMeal = NutritionPlanDetail["items"][number];
 
 type NutritionForm = {
   logged_at: string;
@@ -66,6 +72,12 @@ type CorrectionForm = {
   user_correction: string;
 };
 
+type RecordDialog = {
+  date: string;
+  mealType: MealType;
+  title: string;
+} | null;
+
 const mealLabels: Record<MealType, string> = {
   breakfast: "早餐",
   lunch: "午餐",
@@ -102,6 +114,26 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function toDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function fromDateKey(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateTitle(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  }).format(fromDateKey(value));
+}
+
 function numberOrNull(value: string) {
   return value.trim() === "" ? null : Number(value);
 }
@@ -132,6 +164,23 @@ function createEmptyRecognitionForm(): RecognitionForm {
   };
 }
 
+function defaultLoggedAtForMeal(dateKey: string, mealType: MealType) {
+  const mealTimes: Record<MealType, [number, number]> = {
+    breakfast: [8, 0],
+    lunch: [12, 30],
+    dinner: [18, 30],
+    snack: [16, 0],
+    other: [20, 0],
+  };
+  if (dateKey === toDateKey(new Date())) {
+    return toDateTimeLocal(new Date());
+  }
+  const date = fromDateKey(dateKey);
+  const [hours, minutes] = mealTimes[mealType];
+  date.setHours(hours, minutes, 0, 0);
+  return toDateTimeLocal(date);
+}
+
 function createEmptyHeartRateForm(): HeartRateForm {
   return {
     source: "simulated",
@@ -155,10 +204,14 @@ function correctionFromLog(log: NutritionLog): CorrectionForm {
 }
 
 export default function NutritionPage() {
-  const [activeTab, setActiveTab] = useState<NutritionTab>("recognize");
+  const todayKey = toDateKey(new Date());
+  const [activeTab, setActiveTab] = useState<NutritionTab>("records");
   const [logs, setLogs] = useState<NutritionLog[]>([]);
   const [summary, setSummary] = useState<NutritionSummary | null>(null);
   const [activePlan, setActivePlan] = useState<NutritionPlanDetail | null>(null);
+  const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
+  const [recordDialog, setRecordDialog] = useState<RecordDialog>(null);
+  const [recordMode, setRecordMode] = useState<RecordMode>("recognize");
   const [planPrompt, setPlanPrompt] = useState(
     "默认生成 7 天，高蛋白，少油",
   );
@@ -185,14 +238,20 @@ export default function NutritionPage() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [nextLogs, nextHeartSummary, nextSummary] = await Promise.all([
+      const [nextLogs, nextHeartSummary, nextSummary, nextPlans] = await Promise.all([
         fetchNutritionLogs(),
         fetchHeartRateSummary(),
         fetchNutritionSummary(7),
+        fetchNutritionPlans(),
       ]);
+      const selectedPlan = nextPlans.find((plan) => plan.is_active) ?? nextPlans[0];
+      const nextPlan = selectedPlan
+        ? await fetchNutritionPlan(selectedPlan.id)
+        : null;
       setLogs(nextLogs);
       setHeartSummary(nextHeartSummary);
       setSummary(nextSummary);
+      setActivePlan(nextPlan);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "饮食数据读取失败");
@@ -206,6 +265,106 @@ export default function NutritionPage() {
   }, []);
 
   const latestLogs = useMemo(() => logs.slice(0, 6), [logs]);
+  const planDays = useMemo(() => {
+    const grouped = new Map<string, PlanMeal[]>();
+    for (const meal of activePlan?.items ?? []) {
+      const meals = grouped.get(meal.scheduled_date) ?? [];
+      meals.push(meal);
+      grouped.set(meal.scheduled_date, meals);
+    }
+    return Array.from(grouped.entries())
+      .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
+      .map(([date, meals]) => ({
+        date,
+        meals: meals.sort((left, right) => left.sort_order - right.sort_order),
+      }));
+  }, [activePlan]);
+
+  function statusLabel(status: PlanMeal["status"]) {
+    const labels: Record<PlanMeal["status"], string> = {
+      planned: "计划中",
+      logged: "已记录",
+      partial: "部分记录",
+      over_target: "超目标",
+      missed: "未记录",
+    };
+    return labels[status];
+  }
+
+  function statusClass(status: PlanMeal["status"]) {
+    if (status === "logged") {
+      return "bg-emerald-100 text-emerald-700";
+    }
+    if (status === "partial") {
+      return "bg-amber-100 text-amber-700";
+    }
+    if (status === "over_target") {
+      return "bg-red-100 text-red-700";
+    }
+    if (status === "missed") {
+      return "bg-slate-200 text-slate-600";
+    }
+    return "bg-slate-100 text-slate-700";
+  }
+
+  function openRecordDialog(meal: PlanMeal) {
+    const loggedAt = defaultLoggedAtForMeal(meal.scheduled_date, meal.meal_type);
+    setRecordMode("recognize");
+    setRecordDialog({
+      date: meal.scheduled_date,
+      mealType: meal.meal_type,
+      title: meal.title,
+    });
+    setRecognitionForm({
+      logged_at: loggedAt,
+      meal_type: meal.meal_type,
+      description: meal.title,
+      image: null,
+    });
+    setManualForm({
+      logged_at: loggedAt,
+      meal_type: meal.meal_type,
+      food_name: "",
+      description: meal.title,
+      calories_kcal: String(meal.target_calories_kcal ?? 420),
+      protein_g: meal.target_protein_g === null ? "" : String(meal.target_protein_g),
+      carbs_g: meal.target_carbs_g === null ? "" : String(meal.target_carbs_g),
+      fat_g: meal.target_fat_g === null ? "" : String(meal.target_fat_g),
+    });
+    setFileInputKey((current) => current + 1);
+    setError(null);
+    setStatus(null);
+  }
+
+  function openQuickRecordDialog() {
+    const loggedAt = toDateTimeLocal(new Date());
+    setRecordMode("recognize");
+    setRecordDialog({
+      date: todayKey,
+      mealType: "lunch",
+      title: "饮食记录",
+    });
+    setRecognitionForm({
+      logged_at: loggedAt,
+      meal_type: "lunch",
+      description: "",
+      image: null,
+    });
+    setManualForm(createEmptyNutritionForm());
+    setFileInputKey((current) => current + 1);
+    setError(null);
+    setStatus(null);
+  }
+
+  function updateRecordMealType(mealType: MealType) {
+    setRecordDialog((current) => (current ? { ...current, mealType } : current));
+    setRecognitionForm((current) => ({ ...current, meal_type: mealType }));
+    setManualForm((current) => ({ ...current, meal_type: mealType }));
+  }
+
+  function closeRecordDialog() {
+    setRecordDialog(null);
+  }
 
   async function handlePlanGenerate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -219,6 +378,7 @@ export default function NutritionPage() {
     try {
       const response = await generateNutritionPlan(planPrompt.trim());
       setActivePlan(response.plan);
+      setIsPlanDialogOpen(false);
       setStatus("饮食计划已生成");
       await loadData();
     } catch (caught) {
@@ -241,6 +401,7 @@ export default function NutritionPage() {
       const response = await adjustNutritionPlan(activePlan.id, adjustPrompt.trim());
       setActivePlan(response.plan);
       setAdjustPrompt("");
+      setIsPlanDialogOpen(false);
       setStatus("饮食计划已调整");
       await loadData();
     } catch (caught) {
@@ -276,6 +437,7 @@ export default function NutritionPage() {
       setFileInputKey((current) => current + 1);
       setEditingLogId(response.log.id);
       setCorrectionForm(correctionFromLog(response.log));
+      closeRecordDialog();
       await loadData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "食物识别失败");
@@ -302,6 +464,7 @@ export default function NutritionPage() {
       });
       setStatus(`已保存 ${created.food_name}`);
       setManualForm(createEmptyNutritionForm());
+      closeRecordDialog();
       await loadData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "饮食记录保存失败");
@@ -481,9 +644,6 @@ export default function NutritionPage() {
   }
 
   const tabs: Array<{ id: NutritionTab; label: string }> = [
-    { id: "plan", label: "计划" },
-    { id: "recognize", label: "识别" },
-    { id: "manual", label: "手动" },
     { id: "records", label: "记录" },
     { id: "heart", label: "心率" },
   ];
@@ -538,36 +698,149 @@ export default function NutritionPage() {
         {renderCalorieChart(summary)}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {(summary?.today.meals ?? []).map((meal) => (
-          <article
-            key={meal.id}
-            className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-950">
-                  {planMealLabels[meal.meal_type]}
-                </p>
-                <p className="mt-1 text-sm text-slate-600">{meal.title}</p>
-              </div>
-              <span className="rounded-md bg-gym-mint px-2 py-1 text-xs font-semibold text-gym-teal">
-                {meal.status}
-              </span>
-            </div>
-            <p className="mt-3 text-sm text-slate-600">
-              {meal.actual_calories_kcal} / {meal.target_calories_kcal ?? 0} 千卡
-            </p>
-            {meal.portion_notes ? (
-              <p className="mt-2 text-sm text-slate-500">{meal.portion_notes}</p>
-            ) : null}
-          </article>
-        ))}
-      </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {status ? <p className="text-sm text-gym-teal">{status}</p> : null}
 
-      <div className="grid grid-cols-5 gap-2 rounded-lg border border-slate-200 bg-white p-1 shadow-soft">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <CalendarDays
+                aria-hidden="true"
+                className="text-gym-teal"
+                size={20}
+              />
+              <h3 className="text-lg font-semibold text-slate-950">饮食计划</h3>
+            </div>
+            <p className="mt-1 text-sm text-slate-600">
+              {activePlan
+                ? `${activePlan.title} · v${activePlan.current_version} · ${activePlan.items.length} 餐`
+                : "暂无计划"}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
+              disabled={isSaving}
+              type="button"
+              onClick={openQuickRecordDialog}
+            >
+              <ListChecks aria-hidden="true" size={17} />
+              记录饮食
+            </button>
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
+              disabled={isSaving}
+              type="button"
+              onClick={() => setIsPlanDialogOpen(true)}
+            >
+              <Sparkles aria-hidden="true" size={17} />
+              AI 生成
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          {planDays.map((day) => {
+            const isToday = day.date === todayKey;
+            return (
+              <article
+                key={day.date}
+                className={[
+                  "rounded-lg border p-4",
+                  isToday ? "border-gym-teal bg-gym-mint/30" : "border-slate-200",
+                ].join(" ")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">
+                      {formatDateTitle(day.date)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {day.meals.length} 餐 · 目标{" "}
+                      {day.meals.reduce(
+                        (sum, meal) => sum + (meal.target_calories_kcal ?? 0),
+                        0,
+                      )}{" "}
+                      千卡
+                    </p>
+                  </div>
+                  {isToday ? (
+                    <span className="rounded-md bg-gym-teal px-2 py-1 text-xs font-semibold text-white">
+                      今天
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {day.meals.map((meal) => (
+                    <div
+                      key={meal.id}
+                      className="rounded-md border border-slate-200 bg-white p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">
+                            {planMealLabels[meal.meal_type]}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-700">
+                            {meal.title}
+                          </p>
+                        </div>
+                        <span
+                          className={[
+                            "shrink-0 rounded-md px-2 py-1 text-xs font-semibold",
+                            statusClass(meal.status),
+                          ].join(" ")}
+                        >
+                          {statusLabel(meal.status)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-600">
+                        {meal.actual_calories_kcal} /{" "}
+                        {meal.target_calories_kcal ?? 0} 千卡
+                      </p>
+                      {meal.portion_notes ? (
+                        <p className="mt-2 text-sm text-slate-500">
+                          {meal.portion_notes}
+                        </p>
+                      ) : null}
+                      {meal.notes ? (
+                        <p className="mt-2 text-sm text-slate-500">
+                          {meal.notes}
+                        </p>
+                      ) : null}
+                      {isToday ? (
+                        <button
+                          className="mt-3 inline-flex items-center gap-2 rounded-md border border-gym-teal px-3 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint"
+                          type="button"
+                          onClick={() => openRecordDialog(meal)}
+                        >
+                          <ListChecks aria-hidden="true" size={16} />
+                          记录
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </article>
+            );
+          })}
+          {!isLoading && planDays.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-600">
+              暂无饮食计划。
+              <button
+                className="mt-3 inline-flex items-center gap-2 rounded-md border border-gym-teal px-3 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint"
+                type="button"
+                onClick={openQuickRecordDialog}
+              >
+                <ListChecks aria-hidden="true" size={16} />
+                记录饮食
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-1 shadow-soft">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -584,242 +857,6 @@ export default function NutritionPage() {
           </button>
         ))}
       </div>
-
-      {activeTab === "plan" ? (
-        <div className="space-y-3">
-          <form
-            className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
-            onSubmit={handlePlanGenerate}
-          >
-            <div className="flex items-center gap-2">
-              <Sparkles aria-hidden="true" className="text-gym-teal" size={20} />
-              <h3 className="text-lg font-semibold text-slate-950">
-                生成饮食计划
-              </h3>
-            </div>
-            <textarea
-              className="mt-4 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              value={planPrompt}
-              onChange={(event) => setPlanPrompt(event.target.value)}
-            />
-            <button
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              disabled={isSaving}
-              type="submit"
-            >
-              <Sparkles aria-hidden="true" size={17} />
-              生成计划
-            </button>
-          </form>
-          {activePlan ? (
-            <form
-              className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
-              onSubmit={handlePlanAdjust}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold text-slate-950">
-                  调整当前计划
-                </h3>
-                <span className="text-sm text-slate-500">
-                  v{activePlan.current_version} · {activePlan.items.length} 餐
-                </span>
-              </div>
-              <textarea
-                className="mt-4 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                value={adjustPrompt}
-                onChange={(event) => setAdjustPrompt(event.target.value)}
-              />
-              <button
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                disabled={isSaving}
-                type="submit"
-              >
-                <Sparkles aria-hidden="true" size={17} />
-                调整计划
-              </button>
-            </form>
-          ) : null}
-        </div>
-      ) : null}
-
-      {activeTab === "recognize" ? (
-        <form
-          className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
-          onSubmit={handleRecognize}
-        >
-          <div className="flex items-center gap-2">
-            <Sparkles aria-hidden="true" className="text-gym-teal" size={20} />
-            <h3 className="text-lg font-semibold text-slate-950">食物识别</h3>
-          </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-slate-700">
-              餐次
-              {renderMealSelect(recognitionForm.meal_type, (meal_type) =>
-                setRecognitionForm((current) => ({ ...current, meal_type })),
-              )}
-            </label>
-            <label className="block text-sm font-medium text-slate-700">
-              时间
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                required
-                type="datetime-local"
-                value={recognitionForm.logged_at}
-                onChange={(event) =>
-                  setRecognitionForm((current) => ({
-                    ...current,
-                    logged_at: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          </div>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            图片
-            <input
-              key={fileInputKey}
-              accept="image/*"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-gym-mint file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gym-teal"
-              type="file"
-              onChange={(event) =>
-                setRecognitionForm((current) => ({
-                  ...current,
-                  image: event.target.files?.[0] ?? null,
-                }))
-              }
-            />
-          </label>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            描述
-            <textarea
-              className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              value={recognitionForm.description}
-              onChange={(event) =>
-                setRecognitionForm((current) => ({
-                  ...current,
-                  description: event.target.value,
-                }))
-              }
-            />
-          </label>
-          <button
-            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-            disabled={isSaving}
-            type="submit"
-          >
-            <ImageUp aria-hidden="true" size={17} />
-            {isSaving ? "保存中" : "识别并保存"}
-          </button>
-        </form>
-      ) : null}
-
-      {activeTab === "manual" ? (
-        <form
-          className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
-          onSubmit={handleManualSave}
-        >
-          <div className="flex items-center gap-2">
-            <Save aria-hidden="true" className="text-gym-teal" size={20} />
-            <h3 className="text-lg font-semibold text-slate-950">手动记录</h3>
-          </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-slate-700">
-              餐次
-              {renderMealSelect(manualForm.meal_type, (meal_type) =>
-                setManualForm((current) => ({ ...current, meal_type })),
-              )}
-            </label>
-            <label className="block text-sm font-medium text-slate-700">
-              时间
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                required
-                type="datetime-local"
-                value={manualForm.logged_at}
-                onChange={(event) =>
-                  setManualForm((current) => ({
-                    ...current,
-                    logged_at: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="block text-sm font-medium text-slate-700">
-              食物
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                required
-                value={manualForm.food_name}
-                onChange={(event) =>
-                  setManualForm((current) => ({
-                    ...current,
-                    food_name: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="block text-sm font-medium text-slate-700">
-              千卡
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                inputMode="numeric"
-                max="10000"
-                min="0"
-                required
-                type="number"
-                value={manualForm.calories_kcal}
-                onChange={(event) =>
-                  setManualForm((current) => ({
-                    ...current,
-                    calories_kcal: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            {(["protein_g", "carbs_g", "fat_g"] as const).map((field) => (
-              <label key={field} className="block text-sm font-medium text-slate-700">
-                {field === "protein_g" ? "蛋白 g" : field === "carbs_g" ? "碳水 g" : "脂肪 g"}
-                <input
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                  inputMode="decimal"
-                  min="0"
-                  type="number"
-                  value={manualForm[field]}
-                  onChange={(event) =>
-                    setManualForm((current) => ({
-                      ...current,
-                      [field]: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            ))}
-          </div>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            备注
-            <textarea
-              className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              value={manualForm.description}
-              onChange={(event) =>
-                setManualForm((current) => ({
-                  ...current,
-                  description: event.target.value,
-                }))
-              }
-            />
-          </label>
-          <button
-            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-            disabled={isSaving}
-            type="submit"
-          >
-            <Save aria-hidden="true" size={17} />
-            {isSaving ? "保存中" : "保存记录"}
-          </button>
-        </form>
-      ) : null}
 
       {activeTab === "records" ? (
         <div className="space-y-3">
@@ -1013,6 +1050,322 @@ export default function NutritionPage() {
             导入心率
           </button>
         </form>
+      ) : null}
+
+      {isPlanDialogOpen ? (
+        <div className="fixed inset-0 z-30 flex items-end bg-slate-950/40 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-lg bg-white p-5 shadow-soft sm:mx-auto sm:max-w-2xl sm:rounded-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-950">
+                  AI 饮食计划
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  {activePlan ? "生成新计划或调整当前计划。" : "生成新的饮食计划。"}
+                </p>
+              </div>
+              <button
+                aria-label="关闭"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100"
+                title="关闭"
+                type="button"
+                onClick={() => setIsPlanDialogOpen(false)}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+
+            <form className="mt-5" onSubmit={handlePlanGenerate}>
+              <label className="block text-sm font-medium text-slate-700">
+                生成需求
+                <textarea
+                  className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                  value={planPrompt}
+                  onChange={(event) => setPlanPrompt(event.target.value)}
+                />
+              </label>
+              <button
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
+                disabled={isSaving || !planPrompt.trim()}
+                type="submit"
+              >
+                <Sparkles aria-hidden="true" size={17} />
+                {isSaving ? "生成中" : "生成计划"}
+              </button>
+            </form>
+
+            {activePlan ? (
+              <form
+                className="mt-5 border-t border-slate-200 pt-5"
+                onSubmit={handlePlanAdjust}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-base font-semibold text-slate-950">
+                    调整当前计划
+                  </h4>
+                  <span className="text-sm text-slate-500">
+                    v{activePlan.current_version} · {activePlan.items.length} 餐
+                  </span>
+                </div>
+                <label className="mt-3 block text-sm font-medium text-slate-700">
+                  调整需求
+                  <textarea
+                    className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    value={adjustPrompt}
+                    onChange={(event) => setAdjustPrompt(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
+                  disabled={isSaving || !adjustPrompt.trim()}
+                  type="submit"
+                >
+                  <Sparkles aria-hidden="true" size={17} />
+                  {isSaving ? "调整中" : "调整计划"}
+                </button>
+              </form>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {recordDialog ? (
+        <div className="fixed inset-0 z-30 flex items-end bg-slate-950/40 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-lg bg-white p-5 shadow-soft sm:mx-auto sm:max-w-2xl sm:rounded-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-950">
+                  记录饮食
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  {formatDateTitle(recordDialog.date)} ·{" "}
+                  {mealLabels[recordDialog.mealType]} · {recordDialog.title}
+                </p>
+              </div>
+              <button
+                aria-label="关闭"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100"
+                title="关闭"
+                type="button"
+                onClick={closeRecordDialog}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-1">
+              {(["recognize", "manual"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={[
+                    "rounded-md px-3 py-2 text-sm font-semibold transition",
+                    recordMode === mode
+                      ? "bg-gym-teal text-white"
+                      : "text-slate-600 hover:bg-slate-100",
+                  ].join(" ")}
+                  type="button"
+                  onClick={() => setRecordMode(mode)}
+                >
+                  {mode === "recognize" ? "AI 识别" : "手动输入"}
+                </button>
+              ))}
+            </div>
+
+            {recordMode === "recognize" ? (
+              <form className="mt-5" onSubmit={handleRecognize}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    餐次
+                    {renderMealSelect(recognitionForm.meal_type, updateRecordMealType)}
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    时间
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                      required
+                      type="datetime-local"
+                      value={recognitionForm.logged_at}
+                      onChange={(event) =>
+                        setRecognitionForm((current) => ({
+                          ...current,
+                          logged_at: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="mt-4 block text-sm font-medium text-slate-700">
+                  图片
+                  <input
+                    key={fileInputKey}
+                    accept="image/*"
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-gym-mint file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gym-teal"
+                    type="file"
+                    onChange={(event) =>
+                      setRecognitionForm((current) => ({
+                        ...current,
+                        image: event.target.files?.[0] ?? null,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="mt-4 block text-sm font-medium text-slate-700">
+                  描述
+                  <textarea
+                    className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    value={recognitionForm.description}
+                    onChange={(event) =>
+                      setRecognitionForm((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <button
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
+                  disabled={
+                    isSaving ||
+                    (!recognitionForm.description.trim() && !recognitionForm.image)
+                  }
+                  type="submit"
+                >
+                  <ImageUp aria-hidden="true" size={17} />
+                  {isSaving ? "保存中" : "识别并保存"}
+                </button>
+              </form>
+            ) : (
+              <form className="mt-5" onSubmit={handleManualSave}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    餐次
+                    {renderMealSelect(manualForm.meal_type, updateRecordMealType)}
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    时间
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                      required
+                      type="datetime-local"
+                      value={manualForm.logged_at}
+                      onChange={(event) =>
+                        setManualForm((current) => ({
+                          ...current,
+                          logged_at: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    食物
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                      required
+                      value={manualForm.food_name}
+                      onChange={(event) =>
+                        setManualForm((current) => ({
+                          ...current,
+                          food_name: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    千卡
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                      inputMode="numeric"
+                      max="10000"
+                      min="0"
+                      required
+                      type="number"
+                      value={manualForm.calories_kcal}
+                      onChange={(event) =>
+                        setManualForm((current) => ({
+                          ...current,
+                          calories_kcal: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    蛋白 g
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                      inputMode="decimal"
+                      min="0"
+                      type="number"
+                      value={manualForm.protein_g}
+                      onChange={(event) =>
+                        setManualForm((current) => ({
+                          ...current,
+                          protein_g: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    碳水 g
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                      inputMode="decimal"
+                      min="0"
+                      type="number"
+                      value={manualForm.carbs_g}
+                      onChange={(event) =>
+                        setManualForm((current) => ({
+                          ...current,
+                          carbs_g: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    脂肪 g
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                      inputMode="decimal"
+                      min="0"
+                      type="number"
+                      value={manualForm.fat_g}
+                      onChange={(event) =>
+                        setManualForm((current) => ({
+                          ...current,
+                          fat_g: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="mt-4 block text-sm font-medium text-slate-700">
+                  备注
+                  <textarea
+                    className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    value={manualForm.description}
+                    onChange={(event) =>
+                      setManualForm((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <button
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
+                  disabled={
+                    isSaving ||
+                    !manualForm.food_name.trim() ||
+                    !manualForm.calories_kcal.trim()
+                  }
+                  type="submit"
+                >
+                  <Save aria-hidden="true" size={17} />
+                  {isSaving ? "保存中" : "保存记录"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
       ) : null}
     </section>
   );

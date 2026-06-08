@@ -12,6 +12,7 @@ from app.services.nutrition_plan_service import (
     get_nutrition_plan_detail,
     replace_nutrition_plan_meals,
 )
+from app.services.ai_service import _parse_nutrition_plan_content
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -166,6 +167,39 @@ def test_ai_respects_prompt_day_count(
     data = response.json()
     assert data["plan"]["days_count"] == 3
     assert len(data["plan"]["items"]) == 12
+
+
+def test_ai_nutrition_parser_accepts_common_food_item_shapes():
+    title, days_count, meals, _ = _parse_nutrition_plan_content(
+        """
+        {
+          "title": "Provider nutrition plan",
+          "days_count": 1,
+          "change_summary": "Generated",
+          "meals": [
+            {
+              "scheduled_date": "2026-06-08",
+              "meal_type": "\\u65e9\\u9910",
+              "sort_order": 1,
+              "title": "Breakfast",
+              "food_items": ["Eggs", "Greek yogurt"],
+              "portion_notes": "2 eggs and 150g yogurt",
+              "target_calories_kcal": 450,
+              "target_protein_g": 35,
+              "target_carbs_g": 20,
+              "target_fat_g": 22,
+              "notes": "High protein"
+            }
+          ]
+        }
+        """,
+        date(2026, 6, 8),
+    )
+
+    assert title == "Provider nutrition plan"
+    assert days_count == 1
+    assert meals[0].meal_type == "breakfast"
+    assert meals[0].food_items == [{"name": "Eggs"}, {"name": "Greek yogurt"}]
 
 
 def test_ai_adjustment_creates_new_nutrition_plan_version(
