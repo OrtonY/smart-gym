@@ -117,3 +117,40 @@ class AdjustNutritionPlanRequest(BaseModel):
 class AiNutritionPlanResponse(BaseModel):
     conversation_id: int
     plan: NutritionPlanDetailResponse
+
+
+class NutritionDailySummary(BaseModel):
+    date: date
+    target_calories_kcal: int
+    actual_calories_kcal: int
+    actual_protein_g: float
+    actual_carbs_g: float
+    actual_fat_g: float
+    has_logs: bool
+
+
+class NutritionTodaySummary(BaseModel):
+    date: date
+    target_calories_kcal: int
+    actual_calories_kcal: int
+    actual_protein_g: float
+    actual_carbs_g: float
+    actual_fat_g: float
+    meals: list[NutritionPlanMealResponse]
+
+
+class NutritionSummaryResponse(BaseModel):
+    today: NutritionTodaySummary
+    daily: list[NutritionDailySummary]
+
+
+class NutritionReconcileRequest(BaseModel):
+    today: Optional[date] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class NutritionReconcileResponse(BaseModel):
+    updated_meals: int
+    missed_meals: int
+    reconciled_date: date

@@ -14,6 +14,11 @@ from app.core.storage import get_storage_path
 from app.models.ai_provider_config import AiProviderConfig
 from app.models.nutrition_log import NutritionLog
 from app.schemas.nutrition import NutritionLogCorrection, NutritionLogCreate
+from app.services.nutrition_plan_service import (
+    attribute_log_to_plan_meal,
+    recalculate_day_actuals,
+    recalculate_meal_actuals,
+)
 
 
 ALLOWED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic"}
@@ -79,6 +84,11 @@ def create_nutrition_log(
         **payload.model_dump(),
     )
     db.add(log)
+    db.flush()
+    attribute_log_to_plan_meal(db, user_id, log)
+    db.commit()
+    db.refresh(log)
+    recalculate_day_actuals(db, user_id, log.logged_at.date(), final=False)
     db.commit()
     db.refresh(log)
     return log
@@ -119,6 +129,11 @@ def apply_nutrition_correction(
             setattr(log, field, updates[field])
     log.user_correction = payload.user_correction
     log.updated_at = datetime.utcnow()
+    old_meal_id = log.nutrition_plan_meal_id
+    attribute_log_to_plan_meal(db, log.user_id, log)
+    if old_meal_id is not None and old_meal_id != log.nutrition_plan_meal_id:
+        recalculate_meal_actuals(db, old_meal_id, final=False)
+    recalculate_day_actuals(db, log.user_id, log.logged_at.date(), final=False)
     db.commit()
     db.refresh(log)
     return log

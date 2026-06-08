@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -16,6 +16,14 @@ from app.schemas.nutrition import (
     NutritionLogCreate,
     NutritionLogResponse,
 )
+from app.schemas.nutrition_plans import (
+    NutritionPlanDetailResponse,
+    NutritionPlanMealsReplace,
+    NutritionPlanSummaryResponse,
+    NutritionReconcileRequest,
+    NutritionReconcileResponse,
+    NutritionSummaryResponse,
+)
 from app.services.ai_service import (
     AiCoachError,
     generate_food_recognition,
@@ -29,6 +37,13 @@ from app.services.nutrition_service import (
     save_food_image,
     validate_food_image_bytes,
 )
+from app.services.nutrition_plan_service import (
+    get_nutrition_plan_detail,
+    get_nutrition_summary,
+    list_nutrition_plans,
+    replace_nutrition_plan_meals,
+)
+from app.services.nutrition_reconciliation_service import reconcile_nutrition_calendar
 
 router = APIRouter()
 
@@ -83,6 +98,70 @@ def correct_my_nutrition_log(
             detail="Nutrition log not found",
         )
     return apply_nutrition_correction(db, log, payload)
+
+
+@router.get("/plans", response_model=list[NutritionPlanSummaryResponse])
+def list_my_nutrition_plans(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[NutritionPlanSummaryResponse]:
+    return list_nutrition_plans(db, current_user.id)
+
+
+@router.get("/plans/{plan_id}", response_model=NutritionPlanDetailResponse)
+def get_my_nutrition_plan(
+    plan_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NutritionPlanDetailResponse:
+    detail = get_nutrition_plan_detail(db, current_user.id, plan_id)
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nutrition plan not found",
+        )
+    return detail
+
+
+@router.put("/plans/{plan_id}/meals", response_model=NutritionPlanDetailResponse)
+def replace_my_nutrition_plan_meals(
+    plan_id: int,
+    payload: NutritionPlanMealsReplace,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NutritionPlanDetailResponse:
+    plan = replace_nutrition_plan_meals(db, current_user.id, plan_id, payload)
+    if plan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nutrition plan not found",
+        )
+    detail = get_nutrition_plan_detail(db, current_user.id, plan.id)
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nutrition plan not found",
+        )
+    return detail
+
+
+@router.get("/summary", response_model=NutritionSummaryResponse)
+def get_my_nutrition_summary(
+    days: int = 7,
+    today: Optional[date] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NutritionSummaryResponse:
+    return get_nutrition_summary(db, current_user.id, today=today, days=days)
+
+
+@router.post("/reconcile", response_model=NutritionReconcileResponse)
+def reconcile_my_nutrition(
+    payload: NutritionReconcileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NutritionReconcileResponse:
+    return reconcile_nutrition_calendar(db, current_user.id, today=payload.today)
 
 
 @router.post(
