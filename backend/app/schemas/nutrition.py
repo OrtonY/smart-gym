@@ -49,3 +49,4 @@ class NutritionLogResponse(NutritionLogCreate):
 
 class FoodRecognitionResponse(BaseModel):
     log: NutritionLogResponse
+    conversation_id: int

@@ -24,10 +24,13 @@ from app.schemas.nutrition_plans import (
     NutritionReconcileResponse,
     NutritionSummaryResponse,
 )
+from app.services.ai_conversation_service import get_user_conversation
 from app.services.ai_service import (
+    _conversation_history_text,
     AiCoachError,
     generate_food_recognition,
     get_active_ai_provider_config,
+    record_food_recognition_messages,
 )
 from app.services.nutrition_service import (
     apply_nutrition_correction,
@@ -173,6 +176,7 @@ async def recognize_my_food(
     meal_type: str = Form("snack"),
     logged_at: Optional[datetime] = Form(None),
     description: Optional[str] = Form(None),
+    conversation_id: Optional[int] = Form(None),
     image: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -193,6 +197,8 @@ async def recognize_my_food(
 
     image_bytes: Optional[bytes] = None
     image_mime_type: Optional[str] = None
+    conversation = None
+    conversation_history = ""
     if image is not None:
         image_bytes = await image.read()
         image_mime_type = image.content_type
@@ -205,12 +211,31 @@ async def recognize_my_food(
                 detail=str(exc),
             ) from exc
 
+    if conversation_id is not None:
+        conversation = get_user_conversation(
+            db,
+            current_user.id,
+            conversation_id,
+            "food_record",
+        )
+        if conversation is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="AI conversation not found",
+            )
+        conversation_history = _conversation_history_text(
+            db,
+            conversation.id,
+            user_id=current_user.id,
+        )
+
     try:
         estimate = generate_food_recognition(
             config,
             cleaned_description,
             image_bytes=image_bytes,
             image_mime_type=image_mime_type,
+            conversation_history=conversation_history,
         )
         payload = NutritionLogCreate(
             logged_at=logged_at or datetime.utcnow(),
@@ -239,13 +264,28 @@ async def recognize_my_food(
             detail=str(exc),
         ) from exc
 
-    log = create_nutrition_log(
-        db,
-        current_user.id,
-        payload,
-        image_path=image_path,
-        ai_confidence=estimate.get("confidence"),
-        config=config,
-        ai_raw_json=estimate,
-    )
-    return {"log": log}
+    try:
+        conversation = record_food_recognition_messages(
+            db,
+            current_user.id,
+            cleaned_description,
+            estimate,
+            config,
+            conversation_id=conversation_id,
+            conversation=conversation,
+        )
+        log = create_nutrition_log(
+            db,
+            current_user.id,
+            payload,
+            image_path=image_path,
+            ai_confidence=estimate.get("confidence"),
+            config=config,
+            ai_raw_json=estimate,
+        )
+    except AiCoachError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return FoodRecognitionResponse(log=log, conversation_id=conversation.id)

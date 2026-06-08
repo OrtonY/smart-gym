@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from app.models.ai_conversation import AiConversation
+from app.models.ai_message import AiMessage
 from app.models.ai_provider_config import AiProviderConfig
 from app.models.nutrition_log import NutritionLog
 from app.services.ai_config_service import encrypt_api_key
@@ -170,3 +172,140 @@ def test_user_can_correct_own_nutrition_log(client, db_session, create_user_and_
     assert data["food_name"] == "牛肉饭"
     assert data["calories_kcal"] == 720
     assert data["user_correction"] == "实际有一份米饭和牛肉"
+
+
+def test_food_recognition_creates_and_continues_conversation(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("food-conversation@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+
+    first = client.post(
+        "/api/nutrition/recognize",
+        headers=_auth(token),
+        data={
+            "meal_type": "lunch",
+            "description": "鸡胸肉沙拉",
+        },
+    )
+    assert first.status_code == 201
+    conversation_id = first.json()["conversation_id"]
+
+    second = client.post(
+        "/api/nutrition/recognize",
+        headers=_auth(token),
+        data={
+            "meal_type": "lunch",
+            "description": "延续上一餐，酱汁少一点",
+            "conversation_id": str(conversation_id),
+        },
+    )
+
+    assert second.status_code == 201
+    assert second.json()["conversation_id"] == conversation_id
+    conversation = db_session.get(AiConversation, conversation_id)
+    assert conversation.topic == "food_record"
+    assert conversation.user_id == user.id
+    assert (
+        db_session.query(AiMessage)
+        .filter(AiMessage.conversation_id == conversation_id)
+        .count()
+        == 4
+    )
+
+
+def test_food_recognition_rejects_foreign_conversation_before_creating_log(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    owner, _ = create_user_and_token("food-conversation-owner@example.com")
+    user, token = create_user_and_token("food-conversation-viewer@example.com")
+    db_session.add_all([_provider(owner.id), _provider(user.id)])
+    foreign_conversation = AiConversation(user_id=owner.id, topic="food_record")
+    db_session.add(foreign_conversation)
+    db_session.commit()
+    db_session.refresh(foreign_conversation)
+
+    response = client.post(
+        "/api/nutrition/recognize",
+        headers=_auth(token),
+        data={
+            "meal_type": "lunch",
+            "description": "鸡胸肉沙拉",
+            "conversation_id": str(foreign_conversation.id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "AI conversation not found"
+    assert db_session.query(NutritionLog).filter(NutritionLog.user_id == user.id).count() == 0
+
+
+def test_food_recognition_passes_conversation_history_on_continuation(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    user, token = create_user_and_token("food-history@example.com")
+    db_session.add(_provider(user.id))
+    conversation = AiConversation(user_id=user.id, topic="food_record")
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.add_all(
+        [
+            AiMessage(
+                conversation_id=conversation.id,
+                role="user",
+                content="鸡胸肉沙拉",
+                metadata_json={"action": "recognize_food"},
+            ),
+            AiMessage(
+                conversation_id=conversation.id,
+                role="assistant",
+                content='{"food_name":"鸡胸肉沙拉"}',
+                metadata_json={"action": "recognize_food"},
+            ),
+        ]
+    )
+    db_session.commit()
+
+    captured: dict[str, str] = {}
+
+    def fake_generate_food_recognition(
+        config,
+        description,
+        image_bytes=None,
+        image_mime_type=None,
+        conversation_history="",
+    ):
+        captured["description"] = description
+        captured["conversation_history"] = conversation_history
+        return {
+            "food_name": "鸡胸肉沙拉",
+            "description": description,
+            "calories_kcal": 420,
+            "protein_g": 35.0,
+            "carbs_g": 28.0,
+            "fat_g": 14.0,
+            "confidence": 0.84,
+        }
+
+    monkeypatch.setattr(
+        "app.api.routes.nutrition.generate_food_recognition",
+        fake_generate_food_recognition,
+    )
+
+    response = client.post(
+        "/api/nutrition/recognize",
+        headers=_auth(token),
+        data={
+            "meal_type": "lunch",
+            "description": "延续上一餐，酱汁少一点",
+            "conversation_id": str(conversation.id),
+        },
+    )
+
+    assert response.status_code == 201
+    assert captured["description"] == "延续上一餐，酱汁少一点"
+    assert "user: 鸡胸肉沙拉" in captured["conversation_history"]
+    assert 'assistant: {"food_name":"鸡胸肉沙拉"}' in captured["conversation_history"]

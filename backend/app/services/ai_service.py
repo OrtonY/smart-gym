@@ -853,10 +853,13 @@ def _parse_nutrition_plan_content(
     return title, raw_days, meals, str(data.get("change_summary") or "AI 生成")
 
 
-def _food_recognition_prompt(description: str, has_image: bool) -> str:
+def _food_recognition_prompt(
+    description: str, has_image: bool, conversation_history: str = ""
+) -> str:
     return json.dumps(
         {
             "user_description": description.strip() or None,
+            "conversation_history": conversation_history or None,
             "has_image": has_image,
             "instruction": "Estimate the visible food and calories for one meal portion.",
         },
@@ -875,6 +878,7 @@ def _call_food_openai_compatible(
     description: str,
     image_bytes: Optional[bytes],
     image_mime_type: Optional[str],
+    conversation_history: str = "",
 ) -> dict[str, Any]:
     base_url = (config.base_url or "https://api.openai.com/v1").rstrip("/")
     api_key = decrypt_api_key(config.api_key_encrypted)
@@ -884,7 +888,11 @@ def _call_food_openai_compatible(
         timeout=30.0,
         max_retries=0,
     )
-    user_prompt = _food_recognition_prompt(description, image_bytes is not None)
+    user_prompt = _food_recognition_prompt(
+        description,
+        image_bytes is not None,
+        conversation_history=conversation_history,
+    )
     user_content: Any = user_prompt
     if image_bytes is not None:
         user_content = [
@@ -918,12 +926,17 @@ def _call_food_ollama(
     config: AiProviderConfig,
     description: str,
     image_bytes: Optional[bytes],
+    conversation_history: str = "",
 ) -> dict[str, Any]:
     base_url = (config.base_url or "http://127.0.0.1:11434").rstrip("/")
     client = OllamaClient(host=base_url, timeout=60.0)
     user_message: dict[str, Any] = {
         "role": "user",
-        "content": _food_recognition_prompt(description, image_bytes is not None),
+        "content": _food_recognition_prompt(
+            description,
+            image_bytes is not None,
+            conversation_history=conversation_history,
+        ),
     }
     if image_bytes is not None:
         user_message["images"] = [base64.b64encode(image_bytes).decode("ascii")]
@@ -950,18 +963,68 @@ def generate_food_recognition(
     description: str,
     image_bytes: Optional[bytes] = None,
     image_mime_type: Optional[str] = None,
+    conversation_history: str = "",
 ) -> dict[str, Any]:
     if os.getenv("SMART_GYM_AI_FAKE_RESPONSES") == "true":
         return _fake_food_recognition(description, image_bytes is not None)
 
     if config.provider_type in {"openai", "openai-compatible", "openai_compatible"}:
         return _call_food_openai_compatible(
-            config, description, image_bytes, image_mime_type
+            config,
+            description,
+            image_bytes,
+            image_mime_type,
+            conversation_history=conversation_history,
         )
     if config.provider_type == "ollama":
-        return _call_food_ollama(config, description, image_bytes)
+        return _call_food_ollama(
+            config,
+            description,
+            image_bytes,
+            conversation_history=conversation_history,
+        )
 
     raise AiCoachError("Unsupported AI provider")
+
+
+def record_food_recognition_messages(
+    db: Session,
+    user_id: int,
+    description: str,
+    estimate: dict[str, Any],
+    config: AiProviderConfig,
+    conversation_id: Optional[int] = None,
+    conversation: Optional[AiConversation] = None,
+) -> AiConversation:
+    if conversation is None and conversation_id is not None:
+        conversation = get_user_conversation(
+            db,
+            user_id,
+            conversation_id,
+            "food_record",
+        )
+        if conversation is None:
+            raise AiCoachError("AI conversation not found")
+    if conversation is None:
+        conversation = AiConversation(user_id=user_id, topic="food_record")
+        db.add(conversation)
+        db.flush()
+    _create_message(
+        db,
+        conversation.id,
+        "user",
+        description or "Image only",
+        metadata_json={"action": "recognize_food"},
+    )
+    _create_message(
+        db,
+        conversation.id,
+        "assistant",
+        json.dumps(estimate, ensure_ascii=False, default=str),
+        config=config,
+        metadata_json={"action": "recognize_food"},
+    )
+    return conversation
 
 
 def generate_nutrition_plan_items(
