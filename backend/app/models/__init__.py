@@ -6,6 +6,9 @@ from app.models.exercise import Exercise
 from app.models.leaderboard_refresh_state import LeaderboardRefreshState
 from app.models.leaderboard_snapshot import LeaderboardSnapshot
 from app.models.nutrition_log import NutritionLog
+from app.models.nutrition_plan import NutritionPlan
+from app.models.nutrition_plan_meal import NutritionPlanMeal
+from app.models.nutrition_plan_version import NutritionPlanVersion
 from app.models.pose_detection_result import PoseDetectionResult
 from app.models.training_plan import TrainingPlan
 from app.models.training_plan_item import TrainingPlanItem
@@ -27,6 +30,9 @@ __all__ = [
     "LeaderboardRefreshState",
     "LeaderboardSnapshot",
     "NutritionLog",
+    "NutritionPlan",
+    "NutritionPlanMeal",
+    "NutritionPlanVersion",
     "PoseDetectionResult",
     "TrainingPlan",
     "TrainingPlanItem",

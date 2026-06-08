@@ -18,6 +18,9 @@ from app.models.exercise import Exercise
 from app.models.leaderboard_refresh_state import LeaderboardRefreshState
 from app.models.leaderboard_snapshot import LeaderboardSnapshot
 from app.models.nutrition_log import NutritionLog
+from app.models.nutrition_plan import NutritionPlan
+from app.models.nutrition_plan_meal import NutritionPlanMeal
+from app.models.nutrition_plan_version import NutritionPlanVersion
 from app.models.pose_detection_result import PoseDetectionResult
 from app.models.training_plan import TrainingPlan
 from app.models.training_plan_item import TrainingPlanItem
@@ -31,25 +34,28 @@ from app.models.workout_template import WorkoutTemplate
 from app.models.workout_template_step import WorkoutTemplateStep
 
 _models = (
-    AiConversation,
-    AiMessage,
-    AiProviderConfig,
-    DeviceMetric,
+    User,
+    UserProfile,
+    WorkoutMode,
     Exercise,
     LeaderboardRefreshState,
     LeaderboardSnapshot,
+    NutritionPlan,
+    NutritionPlanVersion,
+    NutritionPlanMeal,
     NutritionLog,
     PoseDetectionResult,
     TrainingPlan,
     TrainingPlanItem,
     TrainingPlanVersion,
-    User,
-    UserProfile,
-    WorkoutMode,
-    WorkoutSession,
-    WorkoutSessionStep,
     WorkoutTemplate,
     WorkoutTemplateStep,
+    WorkoutSession,
+    WorkoutSessionStep,
+    DeviceMetric,
+    AiConversation,
+    AiMessage,
+    AiProviderConfig,
 )
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite:///:memory:")
 

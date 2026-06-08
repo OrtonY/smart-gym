@@ -16,6 +16,11 @@ class NutritionLog(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    nutrition_plan_meal_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("nutrition_plan_meals.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     logged_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )

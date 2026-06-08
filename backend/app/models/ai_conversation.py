@@ -20,6 +20,9 @@ class AiConversation(Base):
     training_plan_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("training_plans.id", ondelete="SET NULL"), nullable=True
     )
+    nutrition_plan_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("nutrition_plans.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
