@@ -307,6 +307,7 @@ export type PoseDetectionResultPayload = Omit<
 export type NutritionLog = {
   id: number;
   user_id: number;
+  nutrition_plan_meal_id: number | null;
   logged_at: string;
   meal_type: "breakfast" | "lunch" | "dinner" | "snack" | "other";
   food_name: string;
@@ -329,6 +330,7 @@ export type NutritionLogPayload = Omit<
   NutritionLog,
   | "id"
   | "user_id"
+  | "nutrition_plan_meal_id"
   | "image_path"
   | "ai_confidence"
   | "ai_provider_type"
@@ -346,6 +348,77 @@ export type NutritionCorrectionPayload = Partial<
   >
 > & {
   user_correction: string;
+};
+
+export type NutritionPlanMeal = {
+  id: number;
+  nutrition_plan_id: number;
+  version_number: number;
+  scheduled_date: string;
+  meal_type: "breakfast" | "lunch" | "dinner" | "snack";
+  sort_order: number;
+  title: string;
+  food_items: Array<Record<string, unknown>>;
+  portion_notes: string | null;
+  target_calories_kcal: number | null;
+  target_protein_g: number | null;
+  target_carbs_g: number | null;
+  target_fat_g: number | null;
+  notes: string | null;
+  status: "planned" | "logged" | "partial" | "over_target" | "missed";
+  actual_calories_kcal: number;
+  actual_protein_g: number | null;
+  actual_carbs_g: number | null;
+  actual_fat_g: number | null;
+  last_reconciled_at: string | null;
+};
+
+export type NutritionPlan = {
+  id: number;
+  user_id: number;
+  title: string;
+  source: string;
+  current_version: number;
+  is_active: boolean;
+  start_date: string;
+  end_date: string;
+  days_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NutritionPlanDetail = NutritionPlan & {
+  items: NutritionPlanMeal[];
+  versions: Array<{
+    id: number;
+    nutrition_plan_id: number;
+    version_number: number;
+    source: string;
+    user_prompt: string | null;
+    change_summary: string | null;
+    created_at: string;
+  }>;
+};
+
+export type NutritionSummary = {
+  today: {
+    date: string;
+    target_calories_kcal: number;
+    actual_calories_kcal: number;
+    actual_protein_g: number;
+    actual_carbs_g: number;
+    actual_fat_g: number;
+    meals: NutritionPlanMeal[];
+  };
+  daily: Array<{
+    date: string;
+    target_calories_kcal: number;
+    actual_calories_kcal: number;
+    actual_protein_g: number;
+    actual_carbs_g: number;
+    actual_fat_g: number;
+    has_logs: boolean;
+  }>;
 };
 
 export type DeviceMetric = {
@@ -764,6 +837,38 @@ export function updateNutritionLogCorrection(
     method: "PUT",
     body: JSON.stringify(payload),
   });
+}
+
+export function fetchNutritionSummary(days = 7) {
+  return apiRequest<NutritionSummary>(`/nutrition/summary?days=${days}`);
+}
+
+export function fetchNutritionPlans() {
+  return apiRequest<NutritionPlan[]>("/nutrition/plans");
+}
+
+export function fetchNutritionPlan(planId: number) {
+  return apiRequest<NutritionPlanDetail>(`/nutrition/plans/${planId}`);
+}
+
+export function generateNutritionPlan(prompt: string) {
+  return apiRequest<{ conversation_id: number; plan: NutritionPlanDetail }>(
+    "/ai-coach/nutrition-plans/generate",
+    {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    },
+  );
+}
+
+export function adjustNutritionPlan(planId: number, prompt: string) {
+  return apiRequest<{ conversation_id: number; plan: NutritionPlanDetail }>(
+    `/ai-coach/nutrition-plans/${planId}/adjust`,
+    {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    },
+  );
 }
 
 export function importHeartRateSamples(payload: HeartRateImportPayload) {
