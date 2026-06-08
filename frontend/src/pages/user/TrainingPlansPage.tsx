@@ -26,6 +26,7 @@ import {
   reconcileTrainingPlans,
   replaceTrainingPlanItems,
 } from "../../api/client";
+import AiConversationModal from "../../components/AiConversationModal";
 
 type ItemForm = {
   scheduled_date: string | null;
@@ -251,7 +252,10 @@ export default function TrainingPlansPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [modalItems, setModalItems] = useState<ItemForm[]>([]);
   const [isModalEditing, setIsModalEditing] = useState(false);
-  const [globalAiOpen, setGlobalAiOpen] = useState(false);
+  const [aiDialog, setAiDialog] = useState<{
+    targetDate: string | null;
+    defaultPrompt: string;
+  } | null>(null);
   const [globalPrompt, setGlobalPrompt] = useState(
     "从今天开始安排一周训练计划，兼顾力量和恢复",
   );
@@ -392,67 +396,87 @@ export default function TrainingPlansPage() {
     }
   }
 
-  async function handleDateAiAdjust() {
-    if (!selectedDate || !dateAiPrompt.trim() || selectedDate < todayKey) {
-      return;
+  async function handleTrainingAiSend({
+    message,
+    conversationId,
+  }: {
+    message: string;
+    conversationId: number | null;
+  }) {
+    const targetDate = aiDialog?.targetDate ?? null;
+    if (!message.trim()) {
+      return null;
     }
-    setIsSaving(true);
-    setError(null);
-    setStatus(null);
-    try {
-      const plan = await ensurePlan();
-      const response = await adjustAiTrainingPlan(
-        plan.id,
-        dateAiPrompt.trim(),
-        selectedDate,
-      );
-      syncDetail(response.plan);
-      setModalItems(
-        response.plan.items.map(toFormItem).filter((item) => itemDateKey(item) === selectedDate),
-      );
-      setDateAiPrompt("");
-      setStatus("AI 已调整日期计划");
-      await loadPlan(response.plan.id);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "AI 调整失败");
-    } finally {
-      setIsSaving(false);
+    if (targetDate && targetDate < todayKey) {
+      throw new Error("过去日期不可修改");
     }
-  }
 
-  async function handleGlobalAi() {
-    if (!globalPrompt.trim()) {
-      return;
+    if (targetDate) {
+      setDateAiPrompt(message);
+    } else {
+      setGlobalPrompt(message);
     }
+
     setIsSaving(true);
     setError(null);
     setStatus(null);
     try {
-      if (activePlan) {
-        const message = [
-          `今天是 ${todayKey}，不要修改今天之前的计划。`,
-          "如果用户没有指定跨度，默认从今天向后生成总共 7 天计划。",
-          `用户描述：${globalPrompt.trim()}`,
-        ].join("\n");
-        const response = await adjustAiTrainingPlan(activePlan.id, message);
-        syncDetail(response.plan);
-        await loadPlan(response.plan.id);
-      } else {
-        const response = await generateAiTrainingPlan(
-          [
-            `今天是 ${todayKey}。`,
-            "如果用户没有指定跨度，默认从今天向后生成总共 7 天计划。",
-            `用户描述：${globalPrompt.trim()}`,
-          ].join("\n"),
-          "我的训练课表",
+      if (targetDate) {
+        const plan = activePlan ?? await ensurePlan();
+        const response = await adjustAiTrainingPlan(
+          plan.id,
+          message,
+          targetDate,
+          conversationId,
         );
         syncDetail(response.plan);
         await loadPlan(response.plan.id);
+        setModalItems(
+          response.plan.items
+            .map(toFormItem)
+            .filter((item) => itemDateKey(item) === targetDate),
+        );
+        setAiDialog(null);
+        setStatus("AI 已更新训练计划");
+        return response.conversation_id;
       }
-      setGlobalAiOpen(false);
+
+      if (activePlan) {
+        const requestMessage = [
+          `今天是 ${todayKey}，不要修改今天之前的计划。`,
+          "如果用户没有指定跨度，默认从今天向后生成总共 7 天计划。",
+          `用户描述：${message}`,
+        ].join("\n");
+        const response = await adjustAiTrainingPlan(
+          activePlan.id,
+          requestMessage,
+          undefined,
+          conversationId,
+        );
+        syncDetail(response.plan);
+        await loadPlan(response.plan.id);
+        setAiDialog(null);
+        setStatus("AI 已更新训练计划");
+        return response.conversation_id;
+      }
+
+      const response = await generateAiTrainingPlan(
+        [
+          `今天是 ${todayKey}。`,
+          "如果用户没有指定跨度，默认从今天向后生成总共 7 天计划。",
+          `用户描述：${message}`,
+        ].join("\n"),
+        "我的训练课表",
+        conversationId,
+      );
+      syncDetail(response.plan);
+      await loadPlan(response.plan.id);
+      setAiDialog(null);
       setStatus("AI 已更新训练计划");
+      return response.conversation_id;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "AI 更新失败");
+      throw caught;
     } finally {
       setIsSaving(false);
     }
@@ -508,7 +532,12 @@ export default function TrainingPlansPage() {
           <button
             className="inline-flex items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
             disabled={isSaving}
-            onClick={() => setGlobalAiOpen((current) => !current)}
+            onClick={() =>
+              setAiDialog({
+                targetDate: null,
+                defaultPrompt: globalPrompt,
+              })
+            }
             type="button"
           >
             <MessageSquare aria-hidden="true" size={17} />
@@ -519,38 +548,6 @@ export default function TrainingPlansPage() {
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {status ? <p className="text-sm text-gym-teal">{status}</p> : null}
-
-      {globalAiOpen ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-          <label className="block text-sm font-medium text-slate-700">
-            训练思路
-            <textarea
-              className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-              maxLength={4000}
-              value={globalPrompt}
-              onChange={(event) => setGlobalPrompt(event.target.value)}
-            />
-          </label>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className="inline-flex items-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-              disabled={isSaving || !globalPrompt.trim()}
-              onClick={() => void handleGlobalAi()}
-              type="button"
-            >
-              <Bot aria-hidden="true" size={17} />
-              发送
-            </button>
-            <button
-              className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-gym-teal hover:text-gym-teal"
-              onClick={() => setGlobalAiOpen(false)}
-              type="button"
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-7">
         {weekKeys.map((dateKey, index) => {
@@ -831,23 +828,20 @@ export default function TrainingPlansPage() {
 
             {isModalEditing ? (
               <div className="mt-5 rounded-lg border border-slate-200 p-4">
-                <label className="block text-sm font-medium text-slate-700">
-                  AI 对话
-                  <textarea
-                    className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                    disabled={selectedIsPast}
-                    value={dateAiPrompt}
-                    onChange={(event) => setDateAiPrompt(event.target.value)}
-                  />
-                </label>
                 <button
-                  className="mt-3 inline-flex items-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
-                  disabled={isSaving || selectedIsPast || !dateAiPrompt.trim()}
-                  onClick={() => void handleDateAiAdjust()}
+                  className="inline-flex items-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
+                  disabled={selectedIsPast}
+                  onClick={() =>
+                    setAiDialog({
+                      targetDate: selectedDate,
+                      defaultPrompt:
+                        dateAiPrompt || `调整 ${formatDateTitle(selectedDate)} 的训练安排`,
+                    })
+                  }
                   type="button"
                 >
                   <Bot aria-hidden="true" size={17} />
-                  AI 修改
+                  AI 对话
                 </button>
               </div>
             ) : null}
@@ -919,6 +913,21 @@ export default function TrainingPlansPage() {
           </div>
         </div>
       ) : null}
+
+      <AiConversationModal
+        isOpen={aiDialog !== null}
+        title="AI 训练计划"
+        subtitle={aiDialog?.targetDate ? formatDateTitle(aiDialog.targetDate) : "全局训练计划"}
+        topic="training_plan"
+        trainingPlanId={activePlan?.id ?? null}
+        defaultPrompt={aiDialog?.defaultPrompt ?? ""}
+        sendLabel="发送"
+        loadingLabel="AI 正在更新训练计划"
+        onClose={() => setAiDialog(null)}
+        onSend={({ message, conversationId }) =>
+          handleTrainingAiSend({ message, conversationId })
+        }
+      />
     </section>
   );
 }
