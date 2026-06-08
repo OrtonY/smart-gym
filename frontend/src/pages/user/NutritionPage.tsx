@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   HeartPulse,
   ImageUp,
@@ -13,16 +13,22 @@ import {
 import {
   HeartRateSummary,
   NutritionLog,
+  NutritionPlanDetail,
+  NutritionSummary,
+  adjustNutritionPlan,
   createNutritionLog,
   fetchHeartRateSummary,
   fetchNutritionLogs,
+  fetchNutritionSummary,
+  generateNutritionPlan,
   importHeartRateSamples,
   recognizeFood,
   updateNutritionLogCorrection,
 } from "../../api/client";
 
 type MealType = NutritionLog["meal_type"];
-type NutritionTab = "recognize" | "manual" | "records" | "heart";
+type NutritionTab = "plan" | "recognize" | "manual" | "records" | "heart";
+type PlanMealType = "breakfast" | "lunch" | "dinner" | "snack";
 
 type NutritionForm = {
   logged_at: string;
@@ -66,6 +72,13 @@ const mealLabels: Record<MealType, string> = {
   dinner: "晚餐",
   snack: "加餐",
   other: "其他",
+};
+
+const planMealLabels: Record<PlanMealType, string> = {
+  breakfast: mealLabels.breakfast,
+  lunch: mealLabels.lunch,
+  dinner: mealLabels.dinner,
+  snack: mealLabels.snack,
 };
 
 const emptyHeartSummary: HeartRateSummary = {
@@ -144,6 +157,12 @@ function correctionFromLog(log: NutritionLog): CorrectionForm {
 export default function NutritionPage() {
   const [activeTab, setActiveTab] = useState<NutritionTab>("recognize");
   const [logs, setLogs] = useState<NutritionLog[]>([]);
+  const [summary, setSummary] = useState<NutritionSummary | null>(null);
+  const [activePlan, setActivePlan] = useState<NutritionPlanDetail | null>(null);
+  const [planPrompt, setPlanPrompt] = useState(
+    "默认生成 7 天，高蛋白，少油",
+  );
+  const [adjustPrompt, setAdjustPrompt] = useState("");
   const [heartSummary, setHeartSummary] =
     useState<HeartRateSummary>(emptyHeartSummary);
   const [recognitionForm, setRecognitionForm] = useState<RecognitionForm>(() =>
@@ -166,12 +185,14 @@ export default function NutritionPage() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [nextLogs, nextHeartSummary] = await Promise.all([
+      const [nextLogs, nextHeartSummary, nextSummary] = await Promise.all([
         fetchNutritionLogs(),
         fetchHeartRateSummary(),
+        fetchNutritionSummary(7),
       ]);
       setLogs(nextLogs);
       setHeartSummary(nextHeartSummary);
+      setSummary(nextSummary);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "饮食数据读取失败");
@@ -184,14 +205,50 @@ export default function NutritionPage() {
     void loadData();
   }, []);
 
-  const todayCalories = useMemo(() => {
-    const today = new Date().toDateString();
-    return logs
-      .filter((log) => new Date(log.logged_at).toDateString() === today)
-      .reduce((sum, log) => sum + log.calories_kcal, 0);
-  }, [logs]);
-
   const latestLogs = useMemo(() => logs.slice(0, 6), [logs]);
+
+  async function handlePlanGenerate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!planPrompt.trim()) {
+      setError("请输入饮食计划需求");
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const response = await generateNutritionPlan(planPrompt.trim());
+      setActivePlan(response.plan);
+      setStatus("饮食计划已生成");
+      await loadData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "饮食计划生成失败");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handlePlanAdjust(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activePlan || !adjustPrompt.trim()) {
+      setError("需要先生成计划并输入调整需求");
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const response = await adjustNutritionPlan(activePlan.id, adjustPrompt.trim());
+      setActivePlan(response.plan);
+      setAdjustPrompt("");
+      setStatus("饮食计划已调整");
+      await loadData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "饮食计划调整失败");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   async function handleRecognize(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -374,7 +431,57 @@ export default function NutritionPage() {
     );
   }
 
+  function renderCalorieChart(nextSummary: NutritionSummary | null) {
+    const days = nextSummary?.daily ?? [];
+    const maxValue = Math.max(
+      1,
+      ...days.map((day) =>
+        Math.max(day.actual_calories_kcal, day.target_calories_kcal),
+      ),
+    );
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+        <h3 className="text-base font-semibold text-slate-950">近 7 天卡路里</h3>
+        <div className="mt-4 grid grid-cols-7 gap-2">
+          {days.map((day) => {
+            const actualHeight = Math.max(
+              6,
+              (day.actual_calories_kcal / maxValue) * 120,
+            );
+            const targetHeight = Math.max(
+              6,
+              (day.target_calories_kcal / maxValue) * 120,
+            );
+            return (
+              <div
+                key={day.date}
+                className="flex min-w-0 flex-col items-center gap-2"
+              >
+                <div className="flex h-32 items-end gap-1">
+                  <span
+                    className="w-3 rounded-t bg-gym-teal"
+                    style={{ height: `${actualHeight}px` }}
+                    title={`实际 ${day.actual_calories_kcal} 千卡`}
+                  />
+                  <span
+                    className="w-3 rounded-t bg-slate-300"
+                    style={{ height: `${targetHeight}px` }}
+                    title={`目标 ${day.target_calories_kcal} 千卡`}
+                  />
+                </div>
+                <span className="truncate text-xs text-slate-500">
+                  {new Date(day.date).getDate()}日
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   const tabs: Array<{ id: NutritionTab; label: string }> = [
+    { id: "plan", label: "计划" },
     { id: "recognize", label: "识别" },
     { id: "manual", label: "手动" },
     { id: "records", label: "记录" },
@@ -402,38 +509,65 @@ export default function NutritionPage() {
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
         <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
-            <Utensils aria-hidden="true" size={20} />
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm text-slate-600">今日摄入</p>
+              <p className="mt-2 text-3xl font-semibold text-slate-950">
+                {summary?.today.actual_calories_kcal ?? 0}
+                <span className="ml-2 text-base font-medium text-slate-500">
+                  / {summary?.today.target_calories_kcal ?? 0} 千卡
+                </span>
+              </p>
+            </div>
+            <Utensils aria-hidden="true" className="text-gym-teal" size={24} />
           </div>
-          <p className="mt-4 text-2xl font-semibold text-slate-950">
-            {todayCalories}
-          </p>
-          <p className="mt-1 text-sm text-slate-600">今日千卡</p>
-        </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
-            <ListChecks aria-hidden="true" size={20} />
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <p className="text-sm text-slate-600">
+              蛋白 {Math.round(summary?.today.actual_protein_g ?? 0)}g
+            </p>
+            <p className="text-sm text-slate-600">
+              碳水 {Math.round(summary?.today.actual_carbs_g ?? 0)}g
+            </p>
+            <p className="text-sm text-slate-600">
+              脂肪 {Math.round(summary?.today.actual_fat_g ?? 0)}g
+            </p>
           </div>
-          <p className="mt-4 text-2xl font-semibold text-slate-950">{logs.length}</p>
-          <p className="mt-1 text-sm text-slate-600">饮食记录</p>
         </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gym-mint text-gym-teal">
-            <HeartPulse aria-hidden="true" size={20} />
-          </div>
-          <p className="mt-4 text-2xl font-semibold text-slate-950">
-            {heartSummary.latest_bpm ?? "--"}
-          </p>
-          <p className="mt-1 text-sm text-slate-600">最新 bpm</p>
-        </article>
+        {renderCalorieChart(summary)}
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2">
+        {(summary?.today.meals ?? []).map((meal) => (
+          <article
+            key={meal.id}
+            className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">
+                  {planMealLabels[meal.meal_type]}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">{meal.title}</p>
+              </div>
+              <span className="rounded-md bg-gym-mint px-2 py-1 text-xs font-semibold text-gym-teal">
+                {meal.status}
+              </span>
+            </div>
+            <p className="mt-3 text-sm text-slate-600">
+              {meal.actual_calories_kcal} / {meal.target_calories_kcal ?? 0} 千卡
+            </p>
+            {meal.portion_notes ? (
+              <p className="mt-2 text-sm text-slate-500">{meal.portion_notes}</p>
+            ) : null}
+          </article>
+        ))}
+      </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {status ? <p className="text-sm text-gym-teal">{status}</p> : null}
 
-      <div className="grid grid-cols-4 gap-2 rounded-lg border border-slate-200 bg-white p-1 shadow-soft">
+      <div className="grid grid-cols-5 gap-2 rounded-lg border border-slate-200 bg-white p-1 shadow-soft">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -450,6 +584,63 @@ export default function NutritionPage() {
           </button>
         ))}
       </div>
+
+      {activeTab === "plan" ? (
+        <div className="space-y-3">
+          <form
+            className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
+            onSubmit={handlePlanGenerate}
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles aria-hidden="true" className="text-gym-teal" size={20} />
+              <h3 className="text-lg font-semibold text-slate-950">
+                生成饮食计划
+              </h3>
+            </div>
+            <textarea
+              className="mt-4 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+              value={planPrompt}
+              onChange={(event) => setPlanPrompt(event.target.value)}
+            />
+            <button
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              disabled={isSaving}
+              type="submit"
+            >
+              <Sparkles aria-hidden="true" size={17} />
+              生成计划
+            </button>
+          </form>
+          {activePlan ? (
+            <form
+              className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
+              onSubmit={handlePlanAdjust}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-950">
+                  调整当前计划
+                </h3>
+                <span className="text-sm text-slate-500">
+                  v{activePlan.current_version} · {activePlan.items.length} 餐
+                </span>
+              </div>
+              <textarea
+                className="mt-4 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                value={adjustPrompt}
+                onChange={(event) => setAdjustPrompt(event.target.value)}
+              />
+              <button
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                disabled={isSaving}
+                type="submit"
+              >
+                <Sparkles aria-hidden="true" size={17} />
+                调整计划
+              </button>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
 
       {activeTab === "recognize" ? (
         <form
