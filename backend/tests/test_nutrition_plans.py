@@ -1,10 +1,12 @@
 from datetime import date
 
+from app.models.ai_provider_config import AiProviderConfig
 from app.schemas.nutrition_plans import (
     NutritionPlanCreate,
     NutritionPlanMealCreate,
     NutritionPlanMealsReplace,
 )
+from app.services.ai_config_service import encrypt_api_key
 from app.services.nutrition_plan_service import (
     create_nutrition_plan,
     get_nutrition_plan_detail,
@@ -111,3 +113,84 @@ def test_replace_nutrition_plan_meals_creates_new_version(
     assert detail["items"][0].version_number == 2
     assert detail["items"][0].meal_type == "lunch"
     assert len(detail["versions"]) == 2
+
+
+def _provider(user_id: int) -> AiProviderConfig:
+    return AiProviderConfig(
+        user_id=user_id,
+        provider_type="openai-compatible",
+        base_url="https://example.test/v1",
+        model_name="test-model",
+        api_key_encrypted=encrypt_api_key("test-key"),
+        is_active=True,
+    )
+
+
+def test_ai_generates_default_seven_day_nutrition_plan(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("nutrition-ai-default@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+
+    response = client.post(
+        "/api/ai-coach/nutrition-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "high protein, low oil"},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["plan"]["days_count"] == 7
+    assert len(data["plan"]["items"]) == 28
+    assert data["plan"]["items"][0]["meal_type"] == "breakfast"
+    assert data["conversation_id"] > 0
+
+
+def test_ai_respects_prompt_day_count(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("nutrition-ai-three@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+
+    response = client.post(
+        "/api/ai-coach/nutrition-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "Generate 3 days, no milk for breakfast"},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["plan"]["days_count"] == 3
+    assert len(data["plan"]["items"]) == 12
+
+
+def test_ai_adjustment_creates_new_nutrition_plan_version(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("nutrition-ai-adjust@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+    created = client.post(
+        "/api/ai-coach/nutrition-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "Generate 3 days"},
+    ).json()
+    plan_id = created["plan"]["id"]
+
+    response = client.post(
+        f"/api/ai-coach/nutrition-plans/{plan_id}/adjust",
+        headers=_auth(token),
+        json={"prompt": "Make dinner lighter for the next 3 days"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["current_version"] == 2
+    assert data["plan"]["versions"][0]["user_prompt"] == (
+        "Make dinner lighter for the next 3 days"
+    )

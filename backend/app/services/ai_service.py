@@ -18,15 +18,28 @@ from app.models.ai_conversation import AiConversation
 from app.models.ai_message import AiMessage
 from app.models.ai_provider_config import AiProviderConfig
 from app.models.exercise import Exercise
+from app.models.nutrition_plan_meal import NutritionPlanMeal
 from app.models.pose_detection_result import PoseDetectionResult
 from app.models.training_plan import TrainingPlan
 from app.schemas.ai_coach import AdjustTrainingPlanRequest, GenerateTrainingPlanRequest
+from app.schemas.nutrition_plans import (
+    AdjustNutritionPlanRequest,
+    GenerateNutritionPlanRequest,
+    NutritionPlanCreate,
+    NutritionPlanMealCreate,
+    NutritionPlanMealsReplace,
+)
 from app.schemas.training_plans import (
     TrainingPlanCreate,
     TrainingPlanItemCreate,
     TrainingPlanItemsReplace,
 )
 from app.services.ai_config_service import decrypt_api_key
+from app.services.nutrition_plan_service import (
+    create_nutrition_plan,
+    get_nutrition_plan_detail,
+    replace_nutrition_plan_meals,
+)
 from app.services.training_plan_service import (
     create_training_plan,
     get_training_plan_detail,
@@ -59,6 +72,16 @@ FOOD_RECOGNITION_SYSTEM_PROMPT = (
     "Use Chinese for food_name and description. Estimate one meal portion. "
     "If uncertain, lower confidence but still return numeric calorie and macro estimates."
 )
+
+NUTRITION_PLAN_SYSTEM_PROMPT = (
+    "Return only JSON with keys title, start_date, days_count, change_summary, meals. "
+    "days_count must be 1-14. meals must include one breakfast, lunch, dinner, and snack "
+    "per day. Each meal must include scheduled_date as YYYY-MM-DD, meal_type, sort_order, "
+    "title, food_items array, portion_notes, target_calories_kcal, target_protein_g, "
+    "target_carbs_g, target_fat_g, notes. Use Chinese for titles and notes."
+)
+
+MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
 
 
 def get_active_ai_provider_config(
@@ -583,6 +606,49 @@ def _fake_food_recognition(description: str, has_image: bool) -> dict[str, Any]:
     }
 
 
+def _requested_nutrition_days(prompt: str) -> int:
+    match = re.search(r"(\d+)\s*(?:天|day|days)", prompt, flags=re.IGNORECASE)
+    if match is None:
+        return 7
+    days = int(match.group(1))
+    if days < 1 or days > 14:
+        raise AiCoachError("Nutrition plan days must be between 1 and 14")
+    return days
+
+
+def _fake_nutrition_plan(
+    prompt: str, start_date: date
+) -> tuple[str, int, list[NutritionPlanMealCreate], str]:
+    days = _requested_nutrition_days(prompt)
+    meals: list[NutritionPlanMealCreate] = []
+    templates = {
+        "breakfast": ("燕麦鸡蛋早餐", 450, 28.0, 48.0, 14.0),
+        "lunch": ("鸡胸糙米午餐", 650, 42.0, 72.0, 18.0),
+        "dinner": ("清淡鱼肉晚餐", 560, 38.0, 45.0, 16.0),
+        "snack": ("酸奶坚果加餐", 220, 14.0, 18.0, 10.0),
+    }
+    for offset in range(days):
+        scheduled_date = start_date + timedelta(days=offset)
+        for sort_order, meal_type in enumerate(MEAL_TYPES):
+            title, calories, protein, carbs, fat = templates[meal_type]
+            meals.append(
+                NutritionPlanMealCreate(
+                    scheduled_date=scheduled_date,
+                    meal_type=meal_type,
+                    sort_order=sort_order,
+                    title=title,
+                    food_items=[{"name": title, "portion": "1 serving"}],
+                    portion_notes="按一人份估算，可按饱腹感微调",
+                    target_calories_kcal=calories,
+                    target_protein_g=protein,
+                    target_carbs_g=carbs,
+                    target_fat_g=fat,
+                    notes="少油烹饪，优先选择天然食材",
+                )
+            )
+    return "AI 饮食计划", days, meals, "AI 生成"
+
+
 def _bounded_float(value: Any, upper: float) -> Optional[float]:
     parsed = _parse_optional_float(value)
     if parsed is None:
@@ -621,6 +687,60 @@ def _parse_food_recognition_content(content: str) -> dict[str, Any]:
         "fat_g": _bounded_float(data.get("fat_g") or data.get("fat"), 1_000),
         "confidence": confidence,
     }
+
+
+def _parse_nutrition_plan_content(
+    content: str, fallback_start: date
+) -> tuple[str, int, list[NutritionPlanMealCreate], str]:
+    try:
+        data = json.loads(_strip_json_fence(content))
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise AiCoachError("AI provider returned invalid nutrition plan JSON") from exc
+    if not isinstance(data, dict):
+        raise AiCoachError("AI provider returned invalid nutrition plan JSON")
+
+    title = str(data.get("title") or "AI 饮食计划")
+    raw_days = _parse_optional_int(data.get("days_count")) or 7
+    if raw_days < 1 or raw_days > 14:
+        raise AiCoachError("Nutrition plan days must be between 1 and 14")
+    raw_meals = data.get("meals")
+    if not isinstance(raw_meals, list) or not raw_meals:
+        raise AiCoachError("AI provider returned no nutrition meals")
+
+    meals: list[NutritionPlanMealCreate] = []
+    for index, raw_meal in enumerate(raw_meals):
+        if not isinstance(raw_meal, dict):
+            raise AiCoachError("AI provider returned invalid nutrition meal")
+        normalized = {
+            "scheduled_date": raw_meal.get("scheduled_date")
+            or raw_meal.get("date")
+            or fallback_start.isoformat(),
+            "meal_type": raw_meal.get("meal_type"),
+            "sort_order": _parse_optional_int(raw_meal.get("sort_order")) or index,
+            "title": raw_meal.get("title") or raw_meal.get("name") or "计划餐",
+            "food_items": raw_meal.get("food_items") or [],
+            "portion_notes": _normalize_notes(raw_meal.get("portion_notes")),
+            "target_calories_kcal": _bounded_int(
+                raw_meal.get("target_calories_kcal") or raw_meal.get("calories_kcal"),
+                10_000,
+            ),
+            "target_protein_g": _bounded_float(
+                raw_meal.get("target_protein_g") or raw_meal.get("protein_g"), 1_000
+            ),
+            "target_carbs_g": _bounded_float(
+                raw_meal.get("target_carbs_g") or raw_meal.get("carbs_g"), 1_000
+            ),
+            "target_fat_g": _bounded_float(
+                raw_meal.get("target_fat_g") or raw_meal.get("fat_g"), 1_000
+            ),
+            "notes": _normalize_notes(raw_meal.get("notes")),
+        }
+        try:
+            meals.append(NutritionPlanMealCreate.model_validate(normalized))
+        except ValueError as exc:
+            raise AiCoachError("AI provider returned invalid nutrition meal") from exc
+
+    return title, raw_days, meals, str(data.get("change_summary") or "AI 生成")
 
 
 def _food_recognition_prompt(description: str, has_image: bool) -> str:
@@ -732,6 +852,182 @@ def generate_food_recognition(
         return _call_food_ollama(config, description, image_bytes)
 
     raise AiCoachError("Unsupported AI provider")
+
+
+def generate_nutrition_plan_items(
+    config: AiProviderConfig, prompt: str, start_date: date
+) -> tuple[str, int, list[NutritionPlanMealCreate], str]:
+    if os.getenv("SMART_GYM_AI_FAKE_RESPONSES") == "true":
+        return _fake_nutrition_plan(prompt, start_date)
+
+    messages = [
+        {"role": "system", "content": NUTRITION_PLAN_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    if config.provider_type in {"openai", "openai-compatible", "openai_compatible"}:
+        content = _call_text_openai_compatible(config, messages)
+    elif config.provider_type == "ollama":
+        content = _call_text_ollama(config, messages)
+    else:
+        raise AiCoachError("Unsupported AI provider")
+    return _parse_nutrition_plan_content(content, start_date)
+
+
+def _latest_nutrition_plan_conversation(
+    db: Session, user_id: int, plan_id: int
+) -> Optional[AiConversation]:
+    return (
+        db.execute(
+            select(AiConversation)
+            .where(
+                AiConversation.user_id == user_id,
+                AiConversation.nutrition_plan_id == plan_id,
+                AiConversation.topic == "nutrition_plan",
+            )
+            .order_by(desc(AiConversation.updated_at), desc(AiConversation.id))
+        )
+        .scalars()
+        .first()
+    )
+
+
+def generate_ai_nutrition_plan(
+    db: Session, user_id: int, payload: GenerateNutritionPlanRequest
+) -> dict[str, object]:
+    config = get_active_ai_provider_config(db, user_id)
+    if config is None:
+        raise AiCoachError("AI provider config not found")
+    start_date = payload.start_date or date.today()
+    days = _requested_nutrition_days(payload.prompt)
+    prompt = "\n".join(
+        [
+            f"Today: {date.today().isoformat()}",
+            f"Start date: {start_date.isoformat()}",
+            f"Default days: {days}",
+            f"User request: {payload.prompt}",
+        ]
+    )
+    title, days_count, meals, change_summary = generate_nutrition_plan_items(
+        config, prompt, start_date
+    )
+    plan = create_nutrition_plan(
+        db,
+        user_id,
+        NutritionPlanCreate(
+            title=title,
+            start_date=min(meal.scheduled_date for meal in meals),
+            end_date=max(meal.scheduled_date for meal in meals),
+            days_count=days_count,
+            meals=meals,
+            change_summary=change_summary,
+        ),
+        source="ai_generated",
+        user_prompt=payload.prompt,
+    )
+    conversation = AiConversation(
+        user_id=user_id,
+        topic="nutrition_plan",
+        nutrition_plan_id=plan.id,
+    )
+    db.add(conversation)
+    db.flush()
+    _create_message(db, conversation.id, "user", payload.prompt)
+    _create_message(
+        db,
+        conversation.id,
+        "assistant",
+        json.dumps(
+            {"title": title, "items": [meal.model_dump() for meal in meals]},
+            ensure_ascii=False,
+            default=str,
+        ),
+        config=config,
+        metadata_json={"action": "generate_nutrition_plan"},
+    )
+    db.commit()
+    db.refresh(conversation)
+    detail = get_nutrition_plan_detail(db, user_id, plan.id)
+    if detail is None:
+        raise AiCoachError("Nutrition plan not found")
+    return {"conversation_id": conversation.id, "plan": detail}
+
+
+def adjust_ai_nutrition_plan(
+    db: Session, user_id: int, plan_id: int, payload: AdjustNutritionPlanRequest
+) -> Optional[dict[str, object]]:
+    existing_detail = get_nutrition_plan_detail(db, user_id, plan_id)
+    if existing_detail is None:
+        return None
+    config = get_active_ai_provider_config(db, user_id)
+    if config is None:
+        raise AiCoachError("AI provider config not found")
+
+    current_items = existing_detail["items"]
+    start_date = min(item.scheduled_date for item in current_items)
+    current_summary = [
+        {
+            "scheduled_date": item.scheduled_date.isoformat(),
+            "meal_type": item.meal_type,
+            "title": item.title,
+            "target_calories_kcal": item.target_calories_kcal,
+        }
+        for item in current_items
+    ]
+    prompt = json.dumps(
+        {
+            "current_plan": current_summary,
+            "user_request": payload.prompt,
+            "instruction": "Return the full adjusted meal list, not a patch.",
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+    _, _, meals, change_summary = generate_nutrition_plan_items(
+        config, prompt, start_date
+    )
+    plan = replace_nutrition_plan_meals(
+        db,
+        user_id,
+        plan_id,
+        NutritionPlanMealsReplace(
+            meals=meals,
+            change_summary=change_summary,
+            user_prompt=payload.prompt,
+        ),
+        source="ai_adjusted",
+    )
+    if plan is None:
+        return None
+
+    conversation = _latest_nutrition_plan_conversation(db, user_id, plan_id)
+    if conversation is None:
+        conversation = AiConversation(
+            user_id=user_id,
+            topic="nutrition_plan",
+            nutrition_plan_id=plan_id,
+        )
+        db.add(conversation)
+        db.flush()
+    _create_message(db, conversation.id, "user", payload.prompt)
+    _create_message(
+        db,
+        conversation.id,
+        "assistant",
+        json.dumps(
+            {"items": [meal.model_dump() for meal in meals]},
+            ensure_ascii=False,
+            default=str,
+        ),
+        config=config,
+        metadata_json={"action": "adjust_nutrition_plan"},
+    )
+    db.commit()
+    db.refresh(conversation)
+
+    detail = get_nutrition_plan_detail(db, user_id, plan.id)
+    if detail is None:
+        raise AiCoachError("Nutrition plan not found")
+    return {"conversation_id": conversation.id, "plan": detail}
 
 
 def generate_ai_training_plan(

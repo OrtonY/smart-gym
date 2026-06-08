@@ -99,3 +99,21 @@ class NutritionPlanSummaryResponse(BaseModel):
 class NutritionPlanDetailResponse(NutritionPlanSummaryResponse):
     items: list[NutritionPlanMealResponse]
     versions: list[NutritionPlanVersionResponse]
+
+
+class GenerateNutritionPlanRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4_000)
+    start_date: Optional[date] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdjustNutritionPlanRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4_000)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AiNutritionPlanResponse(BaseModel):
+    conversation_id: int
+    plan: NutritionPlanDetailResponse

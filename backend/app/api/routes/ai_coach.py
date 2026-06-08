@@ -11,9 +11,16 @@ from app.schemas.ai_coach import (
     AiTrainingPlanResponse,
     GenerateTrainingPlanRequest,
 )
+from app.schemas.nutrition_plans import (
+    AdjustNutritionPlanRequest,
+    AiNutritionPlanResponse,
+    GenerateNutritionPlanRequest,
+)
 from app.services.ai_service import (
     AiCoachError,
+    adjust_ai_nutrition_plan,
     adjust_ai_training_plan,
+    generate_ai_nutrition_plan,
     generate_ai_training_plan,
 )
 
@@ -61,5 +68,50 @@ def adjust_my_training_plan(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Training plan not found",
+        )
+    return result
+
+
+@router.post(
+    "/nutrition-plans/generate",
+    response_model=AiNutritionPlanResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def generate_my_nutrition_plan(
+    payload: GenerateNutritionPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AiNutritionPlanResponse:
+    try:
+        return generate_ai_nutrition_plan(db, current_user.id, payload)
+    except AiCoachError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/nutrition-plans/{plan_id}/adjust",
+    response_model=AiNutritionPlanResponse,
+)
+def adjust_my_nutrition_plan(
+    plan_id: int,
+    payload: AdjustNutritionPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AiNutritionPlanResponse:
+    try:
+        result = adjust_ai_nutrition_plan(db, current_user.id, plan_id, payload)
+    except AiCoachError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nutrition plan not found",
         )
     return result
