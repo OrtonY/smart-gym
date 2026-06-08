@@ -34,6 +34,7 @@ class NutritionLogCorrection(BaseModel):
 class NutritionLogResponse(NutritionLogCreate):
     id: int
     user_id: int
+    nutrition_plan_meal_id: Optional[int] = None
     image_path: Optional[str] = None
     ai_confidence: Optional[float] = None
     ai_provider_type: Optional[str] = None
