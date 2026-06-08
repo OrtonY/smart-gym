@@ -35,6 +35,10 @@ from app.schemas.training_plans import (
     TrainingPlanItemsReplace,
 )
 from app.services.ai_config_service import decrypt_api_key
+from app.services.ai_conversation_service import (
+    get_user_conversation,
+    list_conversation_messages,
+)
 from app.services.nutrition_plan_service import (
     create_nutrition_plan,
     get_nutrition_plan_detail,
@@ -502,6 +506,50 @@ def _latest_plan_conversation(
         .scalars()
         .first()
     )
+
+
+def _conversation_history_text(
+    db: Session, conversation_id: int, user_id: Optional[int] = None
+) -> str:
+    messages = list_conversation_messages(db, conversation_id, user_id=user_id)
+    if not messages:
+        return ""
+    lines = [f"{message.role}: {message.content}" for message in messages[-12:]]
+    return "\n".join(lines)
+
+
+def _select_training_conversation(
+    db: Session,
+    user_id: int,
+    plan_id: int,
+    conversation_id: Optional[int],
+) -> Optional[AiConversation]:
+    if conversation_id is not None:
+        return get_user_conversation(
+            db,
+            user_id,
+            conversation_id,
+            "training_plan",
+            training_plan_id=plan_id,
+        )
+    return _latest_plan_conversation(db, user_id, plan_id)
+
+
+def _select_nutrition_conversation(
+    db: Session,
+    user_id: int,
+    plan_id: int,
+    conversation_id: Optional[int],
+) -> Optional[AiConversation]:
+    if conversation_id is not None:
+        return get_user_conversation(
+            db,
+            user_id,
+            conversation_id,
+            "nutrition_plan",
+            nutrition_plan_id=plan_id,
+        )
+    return _latest_nutrition_plan_conversation(db, user_id, plan_id)
 
 
 def _fake_pose_advice(result: PoseDetectionResult) -> str:
@@ -1023,6 +1071,11 @@ def adjust_ai_nutrition_plan(
     config = get_active_ai_provider_config(db, user_id)
     if config is None:
         raise AiCoachError("AI provider config not found")
+    selected_conversation = _select_nutrition_conversation(
+        db, user_id, plan_id, payload.conversation_id
+    )
+    if payload.conversation_id is not None and selected_conversation is None:
+        raise AiCoachError("AI conversation not found")
 
     current_items = existing_detail["items"]
     start_date = min(item.scheduled_date for item in current_items)
@@ -1038,6 +1091,13 @@ def adjust_ai_nutrition_plan(
     prompt = json.dumps(
         {
             "current_plan": current_summary,
+            "conversation_history": (
+                _conversation_history_text(
+                    db, selected_conversation.id, user_id=user_id
+                )
+                if selected_conversation is not None
+                else "No previous messages."
+            ),
             "user_request": payload.prompt,
             "instruction": "Return the full adjusted meal list, not a patch.",
         },
@@ -1047,21 +1107,7 @@ def adjust_ai_nutrition_plan(
     _, _, meals, change_summary = generate_nutrition_plan_items(
         config, prompt, start_date
     )
-    plan = replace_nutrition_plan_meals(
-        db,
-        user_id,
-        plan_id,
-        NutritionPlanMealsReplace(
-            meals=meals,
-            change_summary=change_summary,
-            user_prompt=payload.prompt,
-        ),
-        source="ai_adjusted",
-    )
-    if plan is None:
-        return None
-
-    conversation = _latest_nutrition_plan_conversation(db, user_id, plan_id)
+    conversation = selected_conversation
     if conversation is None:
         conversation = AiConversation(
             user_id=user_id,
@@ -1083,7 +1129,20 @@ def adjust_ai_nutrition_plan(
         config=config,
         metadata_json={"action": "adjust_nutrition_plan"},
     )
-    db.commit()
+    plan = replace_nutrition_plan_meals(
+        db,
+        user_id,
+        plan_id,
+        NutritionPlanMealsReplace(
+            meals=meals,
+            change_summary=change_summary,
+            user_prompt=payload.prompt,
+        ),
+        source="ai_adjusted",
+    )
+    if plan is None:
+        return None
+
     db.refresh(conversation)
 
     detail = get_nutrition_plan_detail(db, user_id, plan.id)
@@ -1159,6 +1218,16 @@ def adjust_ai_training_plan(
     config = get_active_ai_provider_config(db, user_id)
     if config is None:
         raise AiCoachError("AI provider config not found")
+    selected_conversation = _select_training_conversation(
+        db, user_id, plan_id, payload.conversation_id
+    )
+    if payload.conversation_id is not None and selected_conversation is None:
+        raise AiCoachError("AI conversation not found")
+    history_text = (
+        _conversation_history_text(db, selected_conversation.id, user_id=user_id)
+        if selected_conversation is not None
+        else "No previous messages."
+    )
 
     current_items = existing_detail["items"]
     if payload.target_date is not None:
@@ -1169,6 +1238,8 @@ def adjust_ai_training_plan(
                 f"Today: {today.isoformat()}. Do not modify dates before today.",
                 "Backend-provided plan context for target date +/- 3 days:",
                 _context_for_target_date(current_items, payload.target_date),
+                "Conversation history:",
+                history_text,
                 f"User request: {payload.message}",
                 "Return JSON items for the updated target window. Include scheduled_date as YYYY-MM-DD. Do not return weekday values.",
             ]
@@ -1178,6 +1249,7 @@ def adjust_ai_training_plan(
         prompt = (
             f"Today: {today.isoformat()}. Do not modify dates before today. "
             "Use scheduled_date for dates. Do not return weekday values. "
+            f"Conversation history:\n{history_text}\n"
             f"Current plan items: {[item.title for item in current_items]}. "
             f"Adjustment request: {payload.message}"
         )
@@ -1192,17 +1264,7 @@ def adjust_ai_training_plan(
         ]
         items = preserved_items + _assign_dates_to_ai_items(items, target_range)
 
-    plan = replace_training_plan_items(
-        db,
-        user_id,
-        plan_id,
-        TrainingPlanItemsReplace(items=items, change_summary=payload.message),
-        source="ai",
-    )
-    if plan is None:
-        return None
-
-    conversation = _latest_plan_conversation(db, user_id, plan_id)
+    conversation = selected_conversation
     if conversation is None:
         conversation = AiConversation(
             user_id=user_id,
@@ -1224,7 +1286,16 @@ def adjust_ai_training_plan(
         config=config,
         metadata_json={"action": "adjust_training_plan"},
     )
-    db.commit()
+    plan = replace_training_plan_items(
+        db,
+        user_id,
+        plan_id,
+        TrainingPlanItemsReplace(items=items, change_summary=payload.message),
+        source="ai",
+    )
+    if plan is None:
+        return None
+
     db.refresh(conversation)
 
     detail = get_training_plan_detail(db, user_id, plan.id)

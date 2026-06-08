@@ -261,6 +261,74 @@ def test_adjust_training_plan_creates_new_version_and_appends_messages(
     assert db_session.query(AiMessage).count() == 2
 
 
+def test_adjust_training_plan_can_continue_selected_conversation(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("training-continue@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+    created = client.post(
+        "/api/ai-coach/training-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "生成一周训练计划"},
+    ).json()
+    plan_id = created["plan"]["id"]
+    conversation_id = created["conversation_id"]
+
+    response = client.post(
+        f"/api/ai-coach/training-plans/{plan_id}/adjust",
+        headers=_auth(token),
+        json={
+            "message": "延续上面的计划，把周五改成恢复训练",
+            "conversation_id": conversation_id,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["conversation_id"] == conversation_id
+    messages = (
+        db_session.query(AiMessage)
+        .filter(AiMessage.conversation_id == conversation_id)
+        .order_by(AiMessage.id)
+        .all()
+    )
+    assert len(messages) == 4
+    assert messages[-2].content == "延续上面的计划，把周五改成恢复训练"
+
+
+def test_adjust_training_plan_rejects_mismatched_conversation(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("training-mismatch@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+    first = client.post(
+        "/api/ai-coach/training-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "生成第一份训练计划"},
+    ).json()
+    second = client.post(
+        "/api/ai-coach/training-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "生成第二份训练计划"},
+    ).json()
+
+    response = client.post(
+        f"/api/ai-coach/training-plans/{second['plan']['id']}/adjust",
+        headers=_auth(token),
+        json={
+            "message": "尝试串用会话",
+            "conversation_id": first["conversation_id"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "AI conversation not found"
+
+
 def test_adjust_training_plan_with_target_date_preserves_items_outside_window(
     client, db_session, create_user_and_token, monkeypatch
 ):

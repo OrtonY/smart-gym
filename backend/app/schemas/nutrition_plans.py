@@ -104,12 +104,14 @@ class NutritionPlanDetailResponse(NutritionPlanSummaryResponse):
 class GenerateNutritionPlanRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4_000)
     start_date: Optional[date] = None
+    conversation_id: Optional[int] = Field(default=None, ge=1)
 
     model_config = ConfigDict(extra="forbid")
 
 
 class AdjustNutritionPlanRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4_000)
+    conversation_id: Optional[int] = Field(default=None, ge=1)
 
     model_config = ConfigDict(extra="forbid")
 

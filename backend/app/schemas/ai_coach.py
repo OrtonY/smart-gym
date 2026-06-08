@@ -11,6 +11,7 @@ from app.schemas.training_plans import TrainingPlanDetailResponse
 class GenerateTrainingPlanRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     title: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    conversation_id: Optional[int] = Field(default=None, ge=1)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -18,6 +19,7 @@ class GenerateTrainingPlanRequest(BaseModel):
 class AdjustTrainingPlanRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     target_date: Optional[date] = None
+    conversation_id: Optional[int] = Field(default=None, ge=1)
 
     model_config = ConfigDict(extra="forbid")
 

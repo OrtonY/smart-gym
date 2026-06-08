@@ -1,5 +1,6 @@
 from datetime import date
 
+from app.models.ai_message import AiMessage
 from app.models.ai_provider_config import AiProviderConfig
 from app.schemas.nutrition_plans import (
     NutritionPlanCreate,
@@ -228,3 +229,68 @@ def test_ai_adjustment_creates_new_nutrition_plan_version(
     assert data["plan"]["versions"][0]["user_prompt"] == (
         "Make dinner lighter for the next 3 days"
     )
+
+
+def test_adjust_nutrition_plan_can_continue_selected_conversation(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("nutrition-continue@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+    created = client.post(
+        "/api/ai-coach/nutrition-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "Generate 3 days"},
+    ).json()
+    plan_id = created["plan"]["id"]
+    conversation_id = created["conversation_id"]
+
+    response = client.post(
+        f"/api/ai-coach/nutrition-plans/{plan_id}/adjust",
+        headers=_auth(token),
+        json={
+            "prompt": "Continue this plan and make dinner lighter",
+            "conversation_id": conversation_id,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["conversation_id"] == conversation_id
+    assert (
+        db_session.query(AiMessage)
+        .filter(AiMessage.conversation_id == conversation_id)
+        .count()
+        == 4
+    )
+
+
+def test_adjust_nutrition_plan_rejects_mismatched_conversation(
+    client, db_session, create_user_and_token, monkeypatch
+):
+    monkeypatch.setenv("SMART_GYM_AI_FAKE_RESPONSES", "true")
+    user, token = create_user_and_token("nutrition-mismatch@example.com")
+    db_session.add(_provider(user.id))
+    db_session.commit()
+    first = client.post(
+        "/api/ai-coach/nutrition-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "Generate first 3 days"},
+    ).json()
+    second = client.post(
+        "/api/ai-coach/nutrition-plans/generate",
+        headers=_auth(token),
+        json={"prompt": "Generate second 3 days"},
+    ).json()
+
+    response = client.post(
+        f"/api/ai-coach/nutrition-plans/{second['plan']['id']}/adjust",
+        headers=_auth(token),
+        json={
+            "prompt": "Try reusing another plan conversation",
+            "conversation_id": first["conversation_id"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "AI conversation not found"
