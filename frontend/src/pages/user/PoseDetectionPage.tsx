@@ -270,7 +270,14 @@ export default function PoseDetectionPage() {
             onClick={() => void loadAdvice()}
             type="button"
           >
-            <Sparkles aria-hidden="true" size={17} />
+            {isAdviceLoading ? (
+              <span
+                aria-hidden="true"
+                className="h-4 w-4 animate-spin rounded-full border-2 border-gym-teal/30 border-t-gym-teal"
+              />
+            ) : (
+              <Sparkles aria-hidden="true" size={17} />
+            )}
             {isAdviceLoading ? "生成中" : "AI 建议"}
           </button>
           {savedResult.ai_advice ? (
