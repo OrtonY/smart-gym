@@ -26,6 +26,7 @@ type Props = {
   nutritionPlanId?: number | null;
   defaultPrompt?: string;
   extraFields?: ReactNode;
+  canSendEmptyMessage?: boolean;
   sendLabel?: string;
   loadingLabel?: string;
   onClose: () => void;
@@ -78,6 +79,7 @@ export function AiConversationModal({
   nutritionPlanId = null,
   defaultPrompt = "",
   extraFields,
+  canSendEmptyMessage = false,
   sendLabel = "发送",
   loadingLabel = "处理中",
   onClose,
@@ -279,7 +281,7 @@ export function AiConversationModal({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedMessage = message.trim();
-    if (!trimmedMessage) {
+    if (!trimmedMessage && !canSendEmptyMessage) {
       return;
     }
 
@@ -527,7 +529,7 @@ export function AiConversationModal({
                 </label>
                 <button
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-                  disabled={isBusy || !message.trim()}
+                  disabled={isBusy || (!canSendEmptyMessage && !message.trim())}
                   type="submit"
                 >
                   <Send aria-hidden="true" size={17} />

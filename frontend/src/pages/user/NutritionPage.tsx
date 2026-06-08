@@ -1,13 +1,12 @@
 ﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  Bot,
   CalendarDays,
   HeartPulse,
-  ImageUp,
   ListChecks,
   Pencil,
   RefreshCw,
   Save,
-  Sparkles,
   Utensils,
   X,
 } from "lucide-react";
@@ -29,10 +28,10 @@ import {
   recognizeFood,
   updateNutritionLogCorrection,
 } from "../../api/client";
+import AiConversationModal from "../../components/AiConversationModal";
 
 type MealType = NutritionLog["meal_type"];
 type NutritionTab = "records" | "heart";
-type RecordMode = "recognize" | "manual";
 type PlanMealType = "breakfast" | "lunch" | "dinner" | "snack";
 type PlanMeal = NutritionPlanDetail["items"][number];
 
@@ -209,13 +208,11 @@ export default function NutritionPage() {
   const [logs, setLogs] = useState<NutritionLog[]>([]);
   const [summary, setSummary] = useState<NutritionSummary | null>(null);
   const [activePlan, setActivePlan] = useState<NutritionPlanDetail | null>(null);
-  const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
+  const [planAiOpen, setPlanAiOpen] = useState(false);
+  const [foodAiOpen, setFoodAiOpen] = useState(false);
   const [recordDialog, setRecordDialog] = useState<RecordDialog>(null);
-  const [recordMode, setRecordMode] = useState<RecordMode>("recognize");
-  const [planPrompt, setPlanPrompt] = useState(
-    "默认生成 7 天，高蛋白，少油",
-  );
-  const [adjustPrompt, setAdjustPrompt] = useState("");
+  const planPrompt = "默认生成 7 天，高蛋白，少油";
+  const adjustPrompt = "";
   const [heartSummary, setHeartSummary] =
     useState<HeartRateSummary>(emptyHeartSummary);
   const [recognitionForm, setRecognitionForm] = useState<RecognitionForm>(() =>
@@ -309,7 +306,6 @@ export default function NutritionPage() {
 
   function openRecordDialog(meal: PlanMeal) {
     const loggedAt = defaultLoggedAtForMeal(meal.scheduled_date, meal.meal_type);
-    setRecordMode("recognize");
     setRecordDialog({
       date: meal.scheduled_date,
       mealType: meal.meal_type,
@@ -338,7 +334,6 @@ export default function NutritionPage() {
 
   function openQuickRecordDialog() {
     const loggedAt = toDateTimeLocal(new Date());
-    setRecordMode("recognize");
     setRecordDialog({
       date: todayKey,
       mealType: "lunch",
@@ -366,81 +361,79 @@ export default function NutritionPage() {
     setRecordDialog(null);
   }
 
-  async function handlePlanGenerate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!planPrompt.trim()) {
-      setError("请输入饮食计划需求");
-      return;
-    }
+  function clearRecognitionImage() {
+    setRecognitionForm((current) => ({
+      ...current,
+      image: null,
+    }));
+    setFileInputKey((current) => current + 1);
+  }
+
+  async function handleNutritionPlanAiSend({
+    message,
+    conversationId,
+  }: {
+    message: string;
+    conversationId: number | null;
+  }) {
+    if (!message.trim()) return null;
     setIsSaving(true);
     setError(null);
     setStatus(null);
     try {
-      const response = await generateNutritionPlan(planPrompt.trim());
+      const hadActivePlan = Boolean(activePlan);
+      const response = activePlan
+        ? await adjustNutritionPlan(activePlan.id, message.trim(), conversationId)
+        : await generateNutritionPlan(message.trim(), conversationId);
       setActivePlan(response.plan);
-      setIsPlanDialogOpen(false);
-      setStatus("饮食计划已生成");
+      setPlanAiOpen(false);
+      setStatus(hadActivePlan ? "饮食计划已调整" : "饮食计划已生成");
       await loadData();
+      return response.conversation_id;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "饮食计划生成失败");
+      throw caught;
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function handlePlanAdjust(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!activePlan || !adjustPrompt.trim()) {
-      setError("需要先生成计划并输入调整需求");
-      return;
+  async function handleFoodAiSend({
+    message,
+    conversationId,
+  }: {
+    message: string;
+    conversationId: number | null;
+  }) {
+    if (!message.trim() && !recognitionForm.image) {
+      throw new Error("需要图片或文字描述");
     }
     setIsSaving(true);
     setError(null);
     setStatus(null);
     try {
-      const response = await adjustNutritionPlan(activePlan.id, adjustPrompt.trim());
-      setActivePlan(response.plan);
-      setAdjustPrompt("");
-      setIsPlanDialogOpen(false);
-      setStatus("饮食计划已调整");
-      await loadData();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "饮食计划调整失败");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleRecognize(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!recognitionForm.description.trim() && !recognitionForm.image) {
-      setError("需要图片或文字描述");
-      return;
-    }
-    setIsSaving(true);
-    setError(null);
-    setStatus(null);
-    const formData = new FormData();
-    formData.append("meal_type", recognitionForm.meal_type);
-    formData.append("logged_at", new Date(recognitionForm.logged_at).toISOString());
-    if (recognitionForm.description.trim()) {
-      formData.append("description", recognitionForm.description.trim());
-    }
-    if (recognitionForm.image) {
-      formData.append("image", recognitionForm.image);
-    }
-
-    try {
+      const formData = new FormData();
+      formData.append("meal_type", manualForm.meal_type);
+      formData.append("logged_at", new Date(manualForm.logged_at).toISOString());
+      if (message.trim()) {
+        formData.append("description", message.trim());
+      }
+      if (recognitionForm.image) {
+        formData.append("image", recognitionForm.image);
+      }
+      if (conversationId) {
+        formData.append("conversation_id", String(conversationId));
+      }
       const response = await recognizeFood(formData);
       setStatus(`已保存 ${response.log.food_name}`);
-      setRecognitionForm(createEmptyRecognitionForm());
-      setFileInputKey((current) => current + 1);
       setEditingLogId(response.log.id);
       setCorrectionForm(correctionFromLog(response.log));
+      clearRecognitionImage();
+      setFoodAiOpen(false);
       closeRecordDialog();
       await loadData();
+      return response.conversation_id;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "食物识别失败");
+      throw caught;
     } finally {
       setIsSaving(false);
     }
@@ -732,10 +725,10 @@ export default function NutritionPage() {
               className="inline-flex items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
               disabled={isSaving}
               type="button"
-              onClick={() => setIsPlanDialogOpen(true)}
+              onClick={() => setPlanAiOpen(true)}
             >
-              <Sparkles aria-hidden="true" size={17} />
-              AI 生成
+              <Bot aria-hidden="true" size={17} />
+              AI 对话
             </button>
           </div>
         </div>
@@ -1052,83 +1045,6 @@ export default function NutritionPage() {
         </form>
       ) : null}
 
-      {isPlanDialogOpen ? (
-        <div className="fixed inset-0 z-30 flex items-end bg-slate-950/40 p-0 sm:items-center sm:p-4">
-          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-lg bg-white p-5 shadow-soft sm:mx-auto sm:max-w-2xl sm:rounded-lg">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-950">
-                  AI 饮食计划
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  {activePlan ? "生成新计划或调整当前计划。" : "生成新的饮食计划。"}
-                </p>
-              </div>
-              <button
-                aria-label="关闭"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100"
-                title="关闭"
-                type="button"
-                onClick={() => setIsPlanDialogOpen(false)}
-              >
-                <X aria-hidden="true" size={18} />
-              </button>
-            </div>
-
-            <form className="mt-5" onSubmit={handlePlanGenerate}>
-              <label className="block text-sm font-medium text-slate-700">
-                生成需求
-                <textarea
-                  className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                  value={planPrompt}
-                  onChange={(event) => setPlanPrompt(event.target.value)}
-                />
-              </label>
-              <button
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-                disabled={isSaving || !planPrompt.trim()}
-                type="submit"
-              >
-                <Sparkles aria-hidden="true" size={17} />
-                {isSaving ? "生成中" : "生成计划"}
-              </button>
-            </form>
-
-            {activePlan ? (
-              <form
-                className="mt-5 border-t border-slate-200 pt-5"
-                onSubmit={handlePlanAdjust}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-base font-semibold text-slate-950">
-                    调整当前计划
-                  </h4>
-                  <span className="text-sm text-slate-500">
-                    v{activePlan.current_version} · {activePlan.items.length} 餐
-                  </span>
-                </div>
-                <label className="mt-3 block text-sm font-medium text-slate-700">
-                  调整需求
-                  <textarea
-                    className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                    value={adjustPrompt}
-                    onChange={(event) => setAdjustPrompt(event.target.value)}
-                  />
-                </label>
-                <button
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
-                  disabled={isSaving || !adjustPrompt.trim()}
-                  type="submit"
-                >
-                  <Sparkles aria-hidden="true" size={17} />
-                  {isSaving ? "调整中" : "调整计划"}
-                </button>
-              </form>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
       {recordDialog ? (
         <div className="fixed inset-0 z-30 flex items-end bg-slate-950/40 p-0 sm:items-center sm:p-4">
           <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-lg bg-white p-5 shadow-soft sm:mx-auto sm:max-w-2xl sm:rounded-lg">
@@ -1152,221 +1068,210 @@ export default function NutritionPage() {
                 <X aria-hidden="true" size={18} />
               </button>
             </div>
-
-            <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-1">
-              {(["recognize", "manual"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  className={[
-                    "rounded-md px-3 py-2 text-sm font-semibold transition",
-                    recordMode === mode
-                      ? "bg-gym-teal text-white"
-                      : "text-slate-600 hover:bg-slate-100",
-                  ].join(" ")}
-                  type="button"
-                  onClick={() => setRecordMode(mode)}
-                >
-                  {mode === "recognize" ? "AI 识别" : "手动输入"}
-                </button>
-              ))}
-            </div>
-
-            {recordMode === "recognize" ? (
-              <form className="mt-5" onSubmit={handleRecognize}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-medium text-slate-700">
-                    餐次
-                    {renderMealSelect(recognitionForm.meal_type, updateRecordMealType)}
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    时间
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                      required
-                      type="datetime-local"
-                      value={recognitionForm.logged_at}
-                      onChange={(event) =>
-                        setRecognitionForm((current) => ({
-                          ...current,
-                          logged_at: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-                <label className="mt-4 block text-sm font-medium text-slate-700">
-                  图片
+            <form className="mt-5" onSubmit={handleManualSave}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  餐次
+                  {renderMealSelect(manualForm.meal_type, updateRecordMealType)}
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  时间
                   <input
-                    key={fileInputKey}
-                    accept="image/*"
-                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-gym-mint file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gym-teal"
-                    type="file"
-                    onChange={(event) =>
-                      setRecognitionForm((current) => ({
-                        ...current,
-                        image: event.target.files?.[0] ?? null,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="mt-4 block text-sm font-medium text-slate-700">
-                  描述
-                  <textarea
-                    className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                    value={recognitionForm.description}
-                    onChange={(event) =>
-                      setRecognitionForm((current) => ({
-                        ...current,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <button
-                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-                  disabled={
-                    isSaving ||
-                    (!recognitionForm.description.trim() && !recognitionForm.image)
-                  }
-                  type="submit"
-                >
-                  <ImageUp aria-hidden="true" size={17} />
-                  {isSaving ? "保存中" : "识别并保存"}
-                </button>
-              </form>
-            ) : (
-              <form className="mt-5" onSubmit={handleManualSave}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-medium text-slate-700">
-                    餐次
-                    {renderMealSelect(manualForm.meal_type, updateRecordMealType)}
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    时间
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                      required
-                      type="datetime-local"
-                      value={manualForm.logged_at}
-                      onChange={(event) =>
-                        setManualForm((current) => ({
-                          ...current,
-                          logged_at: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    食物
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                      required
-                      value={manualForm.food_name}
-                      onChange={(event) =>
-                        setManualForm((current) => ({
-                          ...current,
-                          food_name: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    千卡
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                      inputMode="numeric"
-                      max="10000"
-                      min="0"
-                      required
-                      type="number"
-                      value={manualForm.calories_kcal}
-                      onChange={(event) =>
-                        setManualForm((current) => ({
-                          ...current,
-                          calories_kcal: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    蛋白 g
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                      inputMode="decimal"
-                      min="0"
-                      type="number"
-                      value={manualForm.protein_g}
-                      onChange={(event) =>
-                        setManualForm((current) => ({
-                          ...current,
-                          protein_g: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    碳水 g
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                      inputMode="decimal"
-                      min="0"
-                      type="number"
-                      value={manualForm.carbs_g}
-                      onChange={(event) =>
-                        setManualForm((current) => ({
-                          ...current,
-                          carbs_g: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    脂肪 g
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                      inputMode="decimal"
-                      min="0"
-                      type="number"
-                      value={manualForm.fat_g}
-                      onChange={(event) =>
-                        setManualForm((current) => ({
-                          ...current,
-                          fat_g: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-                <label className="mt-4 block text-sm font-medium text-slate-700">
-                  备注
-                  <textarea
-                    className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
-                    value={manualForm.description}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    required
+                    type="datetime-local"
+                    value={manualForm.logged_at}
                     onChange={(event) =>
                       setManualForm((current) => ({
                         ...current,
-                        description: event.target.value,
+                        logged_at: event.target.value,
                       }))
                     }
                   />
                 </label>
-                <button
-                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
-                  disabled={
-                    isSaving ||
-                    !manualForm.food_name.trim() ||
-                    !manualForm.calories_kcal.trim()
+                <label className="block text-sm font-medium text-slate-700">
+                  食物
+                  <input
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    required
+                    value={manualForm.food_name}
+                    onChange={(event) =>
+                      setManualForm((current) => ({
+                        ...current,
+                        food_name: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  千卡
+                  <input
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    inputMode="numeric"
+                    max="10000"
+                    min="0"
+                    required
+                    type="number"
+                    value={manualForm.calories_kcal}
+                    onChange={(event) =>
+                      setManualForm((current) => ({
+                        ...current,
+                        calories_kcal: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  蛋白 g
+                  <input
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    inputMode="decimal"
+                    min="0"
+                    type="number"
+                    value={manualForm.protein_g}
+                    onChange={(event) =>
+                      setManualForm((current) => ({
+                        ...current,
+                        protein_g: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  碳水 g
+                  <input
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    inputMode="decimal"
+                    min="0"
+                    type="number"
+                    value={manualForm.carbs_g}
+                    onChange={(event) =>
+                      setManualForm((current) => ({
+                        ...current,
+                        carbs_g: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  脂肪 g
+                  <input
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                    inputMode="decimal"
+                    min="0"
+                    type="number"
+                    value={manualForm.fat_g}
+                    onChange={(event) =>
+                      setManualForm((current) => ({
+                        ...current,
+                        fat_g: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <label className="mt-4 block text-sm font-medium text-slate-700">
+                备注
+                <textarea
+                  className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-base outline-none focus:border-gym-teal focus:ring-2 focus:ring-gym-mint"
+                  value={manualForm.description}
+                  onChange={(event) =>
+                    setManualForm((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
                   }
-                  type="submit"
-                >
-                  <Save aria-hidden="true" size={17} />
-                  {isSaving ? "保存中" : "保存记录"}
-                </button>
-              </form>
-            )}
+                />
+              </label>
+              <button
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gym-teal px-4 py-2 text-sm font-semibold text-gym-teal transition hover:bg-gym-mint disabled:opacity-60"
+                disabled={isSaving}
+                type="button"
+                onClick={() => {
+                  clearRecognitionImage();
+                  setRecognitionForm((current) => ({
+                    ...current,
+                    logged_at: manualForm.logged_at,
+                    meal_type: manualForm.meal_type,
+                    description: manualForm.description,
+                  }));
+                  setFoodAiOpen(true);
+                }}
+              >
+                <Bot aria-hidden="true" size={17} />
+                AI 识别
+              </button>
+              <button
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gym-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
+                disabled={
+                  isSaving ||
+                  !manualForm.food_name.trim() ||
+                  !manualForm.calories_kcal.trim()
+                }
+                type="submit"
+              >
+                <Save aria-hidden="true" size={17} />
+                {isSaving ? "保存中" : "保存记录"}
+              </button>
+            </form>
           </div>
         </div>
       ) : null}
+
+      <AiConversationModal
+        isOpen={planAiOpen}
+        title="AI 饮食计划"
+        subtitle={
+          activePlan
+            ? `${activePlan.title} · v${activePlan.current_version}`
+            : "生成新的饮食计划"
+        }
+        topic="nutrition_plan"
+        nutritionPlanId={activePlan?.id ?? null}
+        defaultPrompt={activePlan ? adjustPrompt || "调整当前饮食计划" : planPrompt}
+        sendLabel="发送"
+        loadingLabel="AI 正在更新饮食计划"
+        onClose={() => setPlanAiOpen(false)}
+        onSend={({ message, conversationId }) =>
+          handleNutritionPlanAiSend({ message, conversationId })
+        }
+      />
+
+      <AiConversationModal
+        isOpen={foodAiOpen}
+        title="AI 食物识别"
+        subtitle="上传图片或输入描述，识别结果会写入记录列表"
+        topic="food_record"
+        defaultPrompt={recognitionForm.description}
+        sendLabel="识别并保存"
+        loadingLabel="AI 正在识别食物"
+        canSendEmptyMessage={Boolean(recognitionForm.image)}
+        extraFields={
+          <label className="block text-sm font-medium text-slate-700">
+            图片
+            <input
+              key={fileInputKey}
+              accept="image/*"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-gym-mint file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gym-teal"
+              disabled={isSaving}
+              type="file"
+              onChange={(event) =>
+                setRecognitionForm((current) => ({
+                  ...current,
+                  image: event.target.files?.[0] ?? null,
+                }))
+              }
+            />
+          </label>
+        }
+        onClose={() => {
+          setFoodAiOpen(false);
+          clearRecognitionImage();
+        }}
+        onSend={({ message, conversationId }) =>
+          handleFoodAiSend({ message, conversationId })
+        }
+      />
     </section>
   );
 }
